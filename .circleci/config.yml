@@ -1,70 +1,88 @@
 version: 2.1
 
 executors:
-  docker-executor:
+  node-executor:
     docker:
-      - image: cimg/base:stable
+      - image: cimg/node:18.20.2
+    working_directory: ~/project
+
+  java-executor:
+    docker:
+      - image: cimg/openjdk:17.0
     working_directory: ~/project
 
 jobs:
   build-frontend:
-    executor: docker-executor
+    executor: node-executor
     steps:
       - run:
           name: Clone Front_VaccinationApp
           command: |
+            if [ -z "$CIRCLE_GH_TOKEN" ] || [ -z "$FRONT_REPO_URL" ]; then
+              echo "Missing required environment variables."
+              exit 1
+            fi
             git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@${FRONT_REPO_URL#https://} frontend
+
       - run:
-          name: Install dependencies
+          name: Install Dependencies
           command: |
             cd frontend
-            sudo apt update && sudo apt install -y npm
             npm install --legacy-peer-deps
+
       - run:
           name: Build Angular App
           command: |
             cd frontend
             npm run build --configuration=production
+
       - run:
           name: Authenticate to AWS ECR
           command: |
-            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-            aws configure set region $AWS_REGION
-            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $FRONT_ECR_REPO
+            aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+            aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+            aws configure set region "$AWS_REGION"
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$FRONT_ECR_REPO"
+
       - run:
           name: Build and Push Docker Image (Frontend)
           command: |
             cd frontend
-            docker build -t $FRONT_ECR_REPO:latest .
-            docker push $FRONT_ECR_REPO:latest
+            docker build -t "$FRONT_ECR_REPO:latest" .
+            docker push "$FRONT_ECR_REPO:latest"
 
   build-backend:
-    executor: docker-executor
+    executor: java-executor
     steps:
       - run:
           name: Clone Back_vaccinationApp
           command: |
+            if [ -z "$CIRCLE_GH_TOKEN" ] || [ -z "$BACK_REPO_URL" ]; then
+              echo "Missing required environment variables."
+              exit 1
+            fi
             git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@${BACK_REPO_URL#https://} backend
+
       - run:
           name: Build Spring Boot App
           command: |
             cd backend
-            sudo apt update && sudo apt install -y maven
             mvn clean install -DskipTests
+
       - run:
           name: Authenticate to AWS ECR
           command: |
-            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-            aws configure set region $AWS_REGION
-            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $BACK_ECR_REPO
+            aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+            aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+            aws configure set region "$AWS_REGION"
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$BACK_ECR_REPO"
+
       - run:
           name: Build and Push Docker Image (Backend)
           command: |
             cd backend
-            docker build -t $BACK_ECR_REPO:latest .
-            docker push $BACK_ECR_REPO:latest
+            docker build -t "$BACK_ECR_REPO:latest" .
+            docker push "$BACK_ECR_REPO:latest"
 
 workflows:
   version: 2
