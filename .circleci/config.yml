@@ -15,6 +15,8 @@ jobs:
   build-frontend:
     executor: node-executor
     steps:
+      - checkout
+
       - run:
           name: Clone Front_VaccinationApp
           command: |
@@ -36,11 +38,13 @@ jobs:
             cd frontend
             npm run build --configuration=production
 
+      - setup_remote_docker:
+          version: 20.10.24
+
       - run:
           name: Install AWS CLI
           command: |
-            sudo apt update
-            sudo apt install -y unzip curl
+            sudo apt update && sudo apt install -y unzip curl
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             sudo ./aws/install
@@ -63,6 +67,8 @@ jobs:
   build-backend:
     executor: java-executor
     steps:
+      - checkout
+
       - run:
           name: Clone Back_vaccinationApp
           command: |
@@ -78,11 +84,13 @@ jobs:
             cd backend
             mvn clean install -DskipTests
 
+      - setup_remote_docker:
+          version: 20.10.24
+
       - run:
           name: Install AWS CLI
           command: |
-            sudo apt update
-            sudo apt install -y unzip curl
+            sudo apt update && sudo apt install -y unzip curl
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             sudo ./aws/install
