@@ -37,6 +37,15 @@ jobs:
             npm run build --configuration=production
 
       - run:
+          name: Install AWS CLI
+          command: |
+            sudo apt update
+            sudo apt install -y unzip curl
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+
+      - run:
           name: Authenticate to AWS ECR
           command: |
             aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
@@ -68,6 +77,15 @@ jobs:
           command: |
             cd backend
             mvn clean install -DskipTests
+
+      - run:
+          name: Install AWS CLI
+          command: |
+            sudo apt update
+            sudo apt install -y unzip curl
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
 
       - run:
           name: Authenticate to AWS ECR
