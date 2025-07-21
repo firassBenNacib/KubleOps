@@ -13,7 +13,8 @@ jobs:
       - run:
           name: Clone Front_VaccinationApp
           command: |
-            git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@${FRONT_REPO_URL#https://} frontend
+            FRONT_REPO_CLEANED=$(echo "$FRONT_REPO_URL" | sed 's|https://||')
+            git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@$FRONT_REPO_CLEANED frontend
       - run:
           name: Install dependencies
           command: |
@@ -45,7 +46,8 @@ jobs:
       - run:
           name: Clone Back_vaccinationApp
           command: |
-            git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@${BACK_REPO_URL#https://} backend
+            BACK_REPO_CLEANED=$(echo "$BACK_REPO_URL" | sed 's|https://||')
+            git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@$BACK_REPO_CLEANED backend
       - run:
           name: Build Spring Boot App
           command: |
