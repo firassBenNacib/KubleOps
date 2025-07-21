@@ -107,7 +107,7 @@ jobs:
           name: Build and Push Docker Image (Backend)
           command: |
             cd backend
-            docker build -t "$BACK_ECR_REPO:latest" .
+            docker build -f Dockerfile.circleci -t "$BACK_ECR_REPO:latest" .
             docker push "$BACK_ECR_REPO:latest"
 
 workflows:
