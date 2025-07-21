@@ -11,36 +11,20 @@ jobs:
     executor: docker-executor
     steps:
       - run:
-          name: Debug Env Vars
-          command: |
-            echo "FRONT_BRANCH: $FRONT_BRANCH"
-            echo "FRONT_REPO_URL: $FRONT_REPO_URL"
-            echo "CIRCLE_GH_TOKEN length: ${#CIRCLE_GH_TOKEN}"
-
-            if [ -z "$FRONT_REPO_URL" ] || [ -z "$CIRCLE_GH_TOKEN" ]; then
-              echo " FRONT_REPO_URL or CIRCLE_GH_TOKEN is missing!"
-              exit 1
-            fi
-
-      - run:
           name: Clone Front_VaccinationApp
           command: |
-            FRONT_REPO_CLEANED=$(echo "$FRONT_REPO_URL" | sed 's|https://||')
-            git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@$FRONT_REPO_CLEANED frontend
-
+            git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@${FRONT_REPO_URL#https://} frontend
       - run:
           name: Install dependencies
           command: |
             cd frontend
             sudo apt update && sudo apt install -y npm
             npm install --legacy-peer-deps
-
       - run:
           name: Build Angular App
           command: |
             cd frontend
             npm run build --configuration=production
-
       - run:
           name: Authenticate to AWS ECR
           command: |
@@ -48,7 +32,6 @@ jobs:
             aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
             aws configure set region $AWS_REGION
             aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $FRONT_ECR_REPO
-
       - run:
           name: Build and Push Docker Image (Frontend)
           command: |
@@ -62,16 +45,13 @@ jobs:
       - run:
           name: Clone Back_vaccinationApp
           command: |
-            BACK_REPO_CLEANED=$(echo "$BACK_REPO_URL" | sed 's|https://||')
-            git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@$BACK_REPO_CLEANED backend
-
+            git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@${BACK_REPO_URL#https://} backend
       - run:
           name: Build Spring Boot App
           command: |
             cd backend
             sudo apt update && sudo apt install -y maven
             mvn clean install -DskipTests
-
       - run:
           name: Authenticate to AWS ECR
           command: |
@@ -79,7 +59,6 @@ jobs:
             aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
             aws configure set region $AWS_REGION
             aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $BACK_ECR_REPO
-
       - run:
           name: Build and Push Docker Image (Backend)
           command: |
