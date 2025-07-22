@@ -42,7 +42,7 @@ jobs:
               -Dsonar.projectKey=$SONAR_FRONTEND_KEY \
               -Dsonar.sources=. \
               -Dsonar.host.url=$SONAR_HOST_URL \
-              -Dsonar.login=$SONAR_TOKEN
+              -Dsonar.login=$SONAR_TOKEN1
 
       - setup_remote_docker:
           version: 20.10.24
@@ -50,12 +50,13 @@ jobs:
       - run:
           name: Install AWS CLI & Trivy
           command: |
-            sudo apt update && sudo apt install -y unzip curl wget
+            sudo apt update && sudo apt install -y unzip curl wget jq
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             sudo ./aws/install
-            wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.51.1_Linux-64bit.deb
-            sudo dpkg -i trivy_0.51.1_Linux-64bit.deb
+            TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name | tr -d 'v')
+            wget "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb" -O trivy.deb
+            sudo dpkg -i trivy.deb
 
       - run:
           name: Authenticate to AWS ECR
@@ -66,7 +67,7 @@ jobs:
             aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$FRONT_ECR_REPO"
 
       - run:
-          name: Build and Scan Docker Image (Frontend)
+          name: Build, Scan, and Push Docker Image (Frontend)
           command: |
             cd frontend
             BUILD_TAG="$FRONT_ECR_REPO:${CIRCLE_BUILD_NUM}"
@@ -128,12 +129,13 @@ jobs:
       - run:
           name: Install AWS CLI & Trivy
           command: |
-            sudo apt update && sudo apt install -y unzip curl wget
+            sudo apt update && sudo apt install -y unzip curl wget jq
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             sudo ./aws/install
-            wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.51.1_Linux-64bit.deb
-            sudo dpkg -i trivy_0.51.1_Linux-64bit.deb
+            TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name | tr -d 'v')
+            wget "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb" -O trivy.deb
+            sudo dpkg -i trivy.deb
 
       - run:
           name: Authenticate to AWS ECR
@@ -144,7 +146,7 @@ jobs:
             aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$BACK_ECR_REPO"
 
       - run:
-          name: Build and Scan Docker Image (Backend)
+          name: Build, Scan, and Push Docker Image (Backend)
           command: |
             cd backend
             BUILD_TAG="$BACK_ECR_REPO:${CIRCLE_BUILD_NUM}"
