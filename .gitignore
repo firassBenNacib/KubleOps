@@ -1,0 +1,17 @@
+k8s/secrets/
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/crash.log
+terraform/user-data-scripts/*.sh
+.vscode/
+.idea/
+.DS_Store
+**/test-*.yaml
+**/dev-*.yaml
