@@ -20,10 +20,6 @@ jobs:
       - run:
           name: Clone Front_VaccinationApp
           command: |
-            if [ -z "$CIRCLE_GH_TOKEN" ] || [ -z "$FRONT_REPO_URL" ]; then
-              echo "Missing required environment variables."
-              exit 1
-            fi
             git clone --branch "$FRONT_BRANCH" https://$CIRCLE_GH_TOKEN@${FRONT_REPO_URL#https://} frontend
 
       - run:
@@ -67,6 +63,18 @@ jobs:
             docker tag "$BUILD_TAG" "$FRONT_ECR_REPO:latest"
             docker push "$FRONT_ECR_REPO:latest"
 
+      - run:
+          name: Update Helm Repo values.yaml (Frontend)
+          command: |
+            git config --global user.name "CircleCI_Pipeline"
+            git config --global user.email "circleci@firasbennacib.com"
+            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj
+            cd kube-proj
+            sed -i "s|\(repository:.*frontend.*\)\n.*tag:.*|\\1\n    tag: \"${CIRCLE_BUILD_NUM}\"|" values.yaml
+            git add values.yaml
+            git commit -m "ci: update frontend image tag to ${CIRCLE_BUILD_NUM}" || echo "No changes to commit"
+            git push origin "$HELM_REPO_BRANCH"
+
   build-backend:
     executor: java-executor
     steps:
@@ -75,10 +83,6 @@ jobs:
       - run:
           name: Clone Back_vaccinationApp
           command: |
-            if [ -z "$CIRCLE_GH_TOKEN" ] || [ -z "$BACK_REPO_URL" ]; then
-              echo "Missing required environment variables."
-              exit 1
-            fi
             git clone --branch "$BACK_BRANCH" https://$CIRCLE_GH_TOKEN@${BACK_REPO_URL#https://} backend
 
       - run:
@@ -115,6 +119,18 @@ jobs:
             docker push "$BUILD_TAG"
             docker tag "$BUILD_TAG" "$BACK_ECR_REPO:latest"
             docker push "$BACK_ECR_REPO:latest"
+
+      - run:
+          name: Update Helm Repo values.yaml (Backend)
+          command: |
+            git config --global user.name "CircleCI_Pipeline"
+            git config --global user.email "circleci@firasbennacib.com"
+            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj
+            cd kube-proj
+            sed -i "s|\(repository:.*backend.*\)\n.*tag:.*|\\1\n    tag: \"${CIRCLE_BUILD_NUM}\"|" values.yaml
+            git add values.yaml
+            git commit -m "ci: update backend image tag to ${CIRCLE_BUILD_NUM}" || echo "No changes to commit"
+            git push origin "$HELM_REPO_BRANCH"
 
 workflows:
   version: 2
