@@ -61,7 +61,10 @@ jobs:
           name: Build and Push Docker Image (Frontend)
           command: |
             cd frontend
-            docker build -t "$FRONT_ECR_REPO:latest" .
+            BUILD_TAG="$FRONT_ECR_REPO:${CIRCLE_BUILD_NUM}"
+            docker build -t "$BUILD_TAG" .
+            docker push "$BUILD_TAG"
+            docker tag "$BUILD_TAG" "$FRONT_ECR_REPO:latest"
             docker push "$FRONT_ECR_REPO:latest"
 
   build-backend:
@@ -107,7 +110,10 @@ jobs:
           name: Build and Push Docker Image (Backend)
           command: |
             cd backend
-            docker build -f Dockerfile.circleci -t "$BACK_ECR_REPO:latest" .
+            BUILD_TAG="$BACK_ECR_REPO:${CIRCLE_BUILD_NUM}"
+            docker build -f Dockerfile.circleci -t "$BUILD_TAG" .
+            docker push "$BUILD_TAG"
+            docker tag "$BUILD_TAG" "$BACK_ECR_REPO:latest"
             docker push "$BACK_ECR_REPO:latest"
 
 workflows:
