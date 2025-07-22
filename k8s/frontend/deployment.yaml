@@ -15,11 +15,18 @@ spec:
       labels:
         app: frontend
     spec:
+      imagePullSecrets:
+        - name: ecr-secret
       containers:
         - name: frontend
-          image: test/frontend:latest
+          image: 392159838427.dkr.ecr.us-east-1.amazonaws.com/frontend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
+          volumeMounts:
+            - name: env-volume
+              mountPath: /usr/share/nginx/html/assets/env.js
+              subPath: env.js
           resources:
             requests:
               memory: "256Mi"
@@ -39,3 +46,7 @@ spec:
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: env-volume
+          configMap:
+            name: frontend-env

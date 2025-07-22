@@ -4,4 +4,4 @@ metadata:
   name: backend-config
   namespace: backend
 data:
-  SPRING_DATASOURCE_URL: jdbc:mysql://mysql.database.svc.cluster.local:3306/test?useSSL=false&serverTimezone=UTC
+  SPRING_DATASOURCE_URL: jdbc:mysql://mysql.database.svc.cluster.local:3306/VaccinationApp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true

@@ -9,52 +9,52 @@ variable "region" {
 
 variable "vpc_name" {
   description = "VPC name"
-  default     = "argocd-vpc"
+  default     = "automation-vpc"
 }
 
 variable "igw_name" {
   description = "Internet Gateway name"
-  default     = "argoc-igw"
+  default     = "automation-igw"
 }
 
 variable "subnet_name" {
   description = "Subnet name"
-  default     = "argocd-subnet"
+  default     = "automation-subnet"
 }
 
 variable "route_table_name" {
   description = "Route table name"
-  default     = "argocd-route-table"
+  default     = "automation-route-table"
 }
 
 
 variable "security_group_name" {
   description = "Security group name"
-  default     = "argocd-sg"
+  default     = "automation-sg"
 }
 
 # Instance Configuration
 
 variable "instance_name" {
   description = "EC2 instance Name"
-  default     = "argocd-server"
+  default     = "automation-server"
 }
 
 variable "instance_type" {
   description = "EC2 instance type"
-  default     = "t2.2xlarge"
+  default     = "t3.medium"
 }
 
 
 
 variable "key_name" {
   description = "SSH key name."
-  default     = "argocd-project"
+  default     = "automation-project"
 }
 
 
 
 variable "iam_role_name" {
   description = "IAM role name "
-  default     = "argocd-server-iam-role"
+  default     = "automation-server-iam-role"
 }
