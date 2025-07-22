@@ -1,5 +1,7 @@
 k8s/secrets/
-k8s/**/secret.yaml
+k8s/backend/secret.yaml
+k8s/frontend/secret.yaml
+k8s/database/secret.yaml
 *.log
 *.tmp
 *.bak
