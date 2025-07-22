@@ -32,17 +32,18 @@ jobs:
           command: |
             cd frontend
             npm run build --configuration=production
-
+            
       - run:
           name: SonarQube Scan (Frontend)
           command: |
             cd frontend
-            npm install -g sonarqube-scanner
-            sonar-scanner \
+            npm install sonarqube-scanner --save-dev
+            npx sonar-scanner \
               -Dsonar.projectKey=$SONAR_FRONTEND_KEY \
               -Dsonar.sources=. \
               -Dsonar.host.url=$SONAR_HOST_URL \
-              -Dsonar.login=$SONAR_TOKEN_front
+              -Dsonar.login=$SONAR_TOKEN_FRONT
+
 
       - setup_remote_docker:
           version: 20.10.24
