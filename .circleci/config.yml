@@ -42,7 +42,7 @@ jobs:
               -Dsonar.projectKey=$SONAR_FRONTEND_KEY \
               -Dsonar.sources=. \
               -Dsonar.host.url=$SONAR_HOST_URL \
-              -Dsonar.login=$SONAR_TOKEN_FRONT
+              -Dsonar.login=$SONAR_TOKEN
 
 
       - setup_remote_docker:
