@@ -89,8 +89,8 @@ jobs:
           command: |
             git config --global user.name "CircleCI_Pipeline"
             git config --global user.email "circleci@firasbennacib.com"
-            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj
-            cd kube-proj
+            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj-manifest
+            cd kube-proj-manifest/manifest
             yq e -i ".frontend.image.tag = \"${CIRCLE_BUILD_NUM}\"" values.yaml
             git add values.yaml
             git commit -m "ci: update frontend image tag to ${CIRCLE_BUILD_NUM}" || echo "No changes to commit"
@@ -168,8 +168,8 @@ jobs:
           command: |
             git config --global user.name "CircleCI_Pipeline"
             git config --global user.email "circleci@firasbennacib.com"
-            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj
-            cd kube-proj
+            git clone --branch "$HELM_REPO_BRANCH" https://$CIRCLE_GH_TOKEN@${HELM_REPO_URL#https://} kube-proj-manifest
+            cd kube-proj-manifest/manifest
             yq e -i ".backend.image.tag = \"${CIRCLE_BUILD_NUM}\"" values.yaml
             git add values.yaml
             git commit -m "ci: update backend image tag to ${CIRCLE_BUILD_NUM}" || echo "No changes to commit"
