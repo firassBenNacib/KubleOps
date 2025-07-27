@@ -22,3 +22,4 @@ k8s/backend/secret.yaml
 k8s/database/secret.yaml
 k8s/secrets/backend-docker-secret.yaml
 *.pem
+*.zip
