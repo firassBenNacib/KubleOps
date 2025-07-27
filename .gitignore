@@ -23,4 +23,5 @@ k8s/database/secret.yaml
 k8s/secrets/backend-docker-secret.yaml
 *.pem
 *.zip
-backend.tf
+*.rar
+terraform/backend.tf
