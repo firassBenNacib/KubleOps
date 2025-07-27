@@ -97,22 +97,24 @@ resource "aws_route_table_association" "pub_subnet_2b" {
 
 resource "aws_security_group" "default" {
   vpc_id      = aws_vpc.vpc.id
-  description = "Allow SSH, HTTP, SonarQube, etc."
+  description = "Default SG for EC2 & SonarQube"
 
-  ingress = [
-    for port in [22, 9000] : {
-      description       = "Allow TCP traffic on port ${port}"
-      from_port         = port
-      to_port           = port
-      protocol          = "tcp"
-      cidr_blocks       = ["0.0.0.0/0"]
-      ipv6_cidr_blocks  = ["::/0"]
-      security_groups   = []
-      prefix_list_ids   = []
-      self              = false
-    }
-  ]
-  
+  ingress {
+    description     = "Allow SSH from Bastion Host"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  ingress {
+    description     = "Allow SonarQube from Bastion Host"
+    from_port       = 9000
+    to_port         = 9000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -122,5 +124,29 @@ resource "aws_security_group" "default" {
 
   tags = {
     Name = var.security_group_name
+  }
+}
+
+resource "aws_security_group" "bastion" {
+  name        = "${var.project_name}-bastion-sg"
+  description = "Allow SSH access to Bastion host"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-bastion-sg"
   }
 }

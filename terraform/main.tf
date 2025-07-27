@@ -1,7 +1,8 @@
 module "vpc" {
-  source       = "./modules/vpc"
-  region       = var.region
-  project_name = var.project_name
+  source           = "./modules/vpc"
+  region           = var.region
+  project_name     = var.project_name
+  allowed_ssh_cidr = var.allowed_ssh_cidr
 
   vpc_cidr           = var.vpc_cidr
   pub_subnet_1a_cidr = var.pub_subnet_1a_cidr
@@ -38,6 +39,15 @@ module "iam" {
   oidc_provider_arn = module.eks_oidc.oidc_provider_arn
 }
 
+module "bastion" {
+  source                 = "./modules/bastion"
+  bastion_instance_type = var.bastion_instance_type
+  bastion_instance_name = var.bastion_name
+  key_name              = var.key_name
+  subnet_id             = module.vpc.pub_subnet_1a_id
+  security_group_id     = module.vpc.bastion_sg_id
+}
+
 module "eks" {
   source               = "./modules/eks"
   project_name         = var.project_name
@@ -67,7 +77,7 @@ module "node_group" {
   desired_size             = 2
   min_size                 = 2
   max_size                 = 2
-  k8s_version              = "1.32"
+  k8s_version              = "1.33"
 
   depends_on = [module.eks]
 }

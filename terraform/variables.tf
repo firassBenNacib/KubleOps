@@ -98,6 +98,12 @@ variable "subnet_name" {
   default     = "KubleOps-server-subnet"
 }
 
+variable "allowed_ssh_cidr" {
+  description = "Public IP allowed to access the bastion"
+  type        = string
+  sensitive   = true
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   default     = "10.0.0.0/16"
@@ -106,4 +112,14 @@ variable "vpc_cidr" {
 variable "vpc_name" {
   description = "Name of the VPC"
   default     = "KubleOps-server-vpc"
+}
+
+variable "bastion_instance_type" {
+  description = "Instance type for the bastion host"
+  default     = "t3.micro"
+}
+
+variable "bastion_name" {
+  description = "Name for the bastion host"
+  default     = "KubleOps-bastion"
 }

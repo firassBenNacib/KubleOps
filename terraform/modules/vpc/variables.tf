@@ -44,7 +44,7 @@ variable "igw_name" {
 }
 
 variable "subnet_name" {
-  description = "Common name prefix for subnets (not used in current module)"
+  description = "Common name prefix for subnets"
   type        = string
 }
 
@@ -75,5 +75,10 @@ variable "pri_subnet_3a_name" {
 
 variable "pri_subnet_4b_name" {
   description = "Name tag for private subnet 4b"
+  type        = string
+}
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to access the bastion host via SSH"
   type        = string
 }

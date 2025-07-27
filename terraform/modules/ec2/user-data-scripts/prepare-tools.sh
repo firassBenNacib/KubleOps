@@ -166,7 +166,6 @@ argocd app sync kubleops --grpc-web
 
 echo
 echo "=========FINAL SUMMARY========="
-echo "SonarQube → http://$EC2_PUBLIC_IP:9000"
 echo "Grafana → http://$GRAFANA_HOST"
 echo "Prometheus → http://$PROMETHEUS_HOST:9090/targets"
 echo "ArgoCD → http://$ARGOCD_HOST"

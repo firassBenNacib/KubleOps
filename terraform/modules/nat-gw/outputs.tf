@@ -9,11 +9,11 @@ output "nat_gw_b_id" {
 }
 
 output "private_rt_a_id" {
-  description = "ID of the private route table A (used by pri-subnet-3a)"
+  description = "ID of the private route table A"
   value       = aws_route_table.private_rt_a.id
 }
 
 output "private_rt_b_id" {
-  description = "ID of the private route table B (used by pri-subnet-4b)"
+  description = "ID of the private route table B"
   value       = aws_route_table.private_rt_b.id
 }

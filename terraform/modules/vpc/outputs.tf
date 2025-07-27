@@ -32,3 +32,8 @@ output "sg_id" {
   description = "ID of the default security group"
   value       = aws_security_group.default.id
 }
+
+output "bastion_sg_id" {
+  description = "Security group for bastion host"
+  value       = aws_security_group.bastion.id
+}
