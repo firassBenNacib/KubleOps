@@ -3,8 +3,12 @@ kind: Ingress
 metadata:
   name: backend-ingress
   namespace: backend
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
 spec:
-  ingressClassName: nginx
+  ingressClassName: alb
   rules:
     - host: api.devops.firasbennacib.com
       http:
@@ -15,4 +19,4 @@ spec:
               service:
                 name: backend
                 port:
-                  number: 8088
+                  number: 80
