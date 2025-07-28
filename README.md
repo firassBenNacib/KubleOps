@@ -12,9 +12,11 @@ KubleOps provisions a secure, scalable, and highly available AWS infrastructure 
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Security](#security)
 - [Monitoring](#monitoring)
-- [Author](#author)
-- [License](#license)
 - [Limitations and Next Steps](#limitations-and-next-steps)
+- [License](#license)
+- [Author](#author)
+
+
 
 ## Features
 
