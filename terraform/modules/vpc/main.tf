@@ -108,11 +108,11 @@ resource "aws_security_group" "default" {
   }
 
   ingress {
-    description     = "Allow SonarQube from Bastion Host"
-    from_port       = 9000
-    to_port         = 9000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.bastion.id]
+    description = "Allow SonarQube UI from Internet"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
