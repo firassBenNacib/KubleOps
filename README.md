@@ -1,6 +1,6 @@
 # KubleOps
 
-KubleOps provisions a secure, scalable, and highly available AWS infrastructure for running a production-ready, multi-tier application on EKS. It uses Terraform modules to deploy a multi-AZ VPC with public and private subnets, dual NAT gateways, an EKS cluster, EC2 nodes, and a bastion host. Applications are deployed with Helm and ArgoCD. CircleCI handles CI/CD, pushing Docker images to ECR. Monitoring and security use Prometheus, Grafana, SonarQube, and Trivy. The AWS ALB Controller enables ingress routing via Application Load Balancers.
+KubleOps provisions a secure, scalable, and highly available AWS infrastructure for running a multi-tier application on EKS. It uses Terraform modules to deploy a multi-AZ VPC with public and private subnets, dual NAT gateways, an EKS cluster, EC2 nodes, and a bastion host. Applications are deployed with Helm and ArgoCD. CircleCI handles CI/CD, pushing Docker images to ECR. Monitoring and security use Prometheus, Grafana, SonarQube, and Trivy. The AWS ALB Controller enables ingress routing via Application Load Balancers.
 
 ## Table of Contents
 
