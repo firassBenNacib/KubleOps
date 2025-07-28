@@ -139,6 +139,24 @@ CircleCI automates:
 * Grafana visualizes system and app health
 * Both are deployed via Helm in the EC2 bootstrapping script
 
+
+
+
+## Limitations and Next Steps
+
+This setup is production-like, but not fully production-ready. Here's what's still missing or can be improved:
+
+* No network segmentation or Kubernetes network policies
+* No VPC flow logs for traffic visibility and auditing
+* No encrypted secrets or external secrets management
+* No automated backups for stateful data
+* No KMS encryption for EBS volumes and EKS secrets
+* No CloudWatch Container Insights for pod-level metrics
+* No AWS WAF or Shield for external-facing services
+* Manual bootstrap process (not fully automated)
+
+
+
 ## License
 
 This project is licensed under the [Apache License 2.0](./LICENSE).
