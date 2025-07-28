@@ -5,3 +5,7 @@ output "bastion_public_ip" {
   value       = module.bastion.bastion_public_ip
   description = "Public IP of the bastion host"
 }
+
+output "ec2_private_ip" {
+  value = module.ec2.ec2_private_ip
+}

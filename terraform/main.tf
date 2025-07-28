@@ -40,7 +40,7 @@ module "iam" {
 }
 
 module "bastion" {
-  source                 = "./modules/bastion"
+  source                = "./modules/bastion"
   bastion_instance_type = var.bastion_instance_type
   bastion_instance_name = var.bastion_name
   key_name              = var.key_name

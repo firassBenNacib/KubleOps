@@ -1,3 +1,6 @@
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 data "aws_iam_policy_document" "ec2_assume_role_policy" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -17,28 +20,217 @@ resource "aws_iam_role" "ec2_role" {
   }
 }
 
-resource "aws_iam_policy" "ecr_access_policy" {
-  name        = "ECRAccessPolicy"
-  description = "Allow EC2 to access ECR"
+resource "aws_iam_policy" "sts_access" {
+  name        = "${var.project_name}-STSAccess"
+  description = "Allow getting caller identity"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [{
-      Effect   = "Allow",
-      Action   = [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetRepositoryPolicy",
-        "ecr:ListImages",
-        "ecr:BatchGetImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:PutImage"
-      ],
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "sts:GetCallerIdentity"
+        ],
+        Resource = "*"
+      }
+    ]
   })
+}
+
+resource "aws_iam_policy" "ecr_access_policy" {
+  name        = "ECRAccessPolicy"
+  description = "Allow EC2 to access ECR with least privilege"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetRepositoryPolicy",
+          "ecr:ListImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ],
+        Resource = [
+          "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}/*",
+          "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/backend",
+          "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/frontend"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "ec2_enhanced_access" {
+  name        = "${var.project_name}-EC2EnhancedAccess"
+  description = "Enhanced EC2 read-only access for infrastructure information"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeImages",
+          "ec2:DescribeKeyPairs",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeRegions",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeInternetGateways"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:CreateTags"
+        ],
+        Resource = "*",
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = data.aws_region.current.name
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "eks_update_kubeconfig_access" {
+  name        = "EKSUpdateKubeconfigAccess"
+  description = "Allow EC2 to call EKS operations for kubeconfig"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "eks:DescribeCluster",
+          "eks:ListClusters"
+        ],
+        Resource = [
+          "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:cluster/${var.project_name}"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "ssm_limited_access" {
+  name        = "${var.project_name}-SSMLimitedAccess"
+  description = "Limited SSM access for project parameters"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParameterHistory"
+        ],
+        Resource = [
+          "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "eks_describe_versions" {
+  name        = "EksDescribeClusterVersions"
+  description = "Allow EKS Describe & List actions with scope"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "eks:DescribeClusterVersions"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:ListUpdates",
+          "eks:DescribeUpdate",
+          "eks:ListNodegroups",
+          "eks:DescribeNodegroup"
+        ],
+        Resource = [
+          "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:cluster/${var.project_name}",
+          "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:nodegroup/${var.project_name}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "iam_limited_access" {
+  name        = "${var.project_name}-IAMLimitedAccess"
+  description = "Very limited IAM access for service account management"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "iam:GetRole",
+          "iam:PassRole"
+        ],
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/AmazonEKSLoadBalancerControllerRole"
+        ]
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "iam:GetServiceLinkedRoleDeletionStatus",
+          "iam:CreateServiceLinkedRole"
+        ],
+        Resource = "*",
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName": [
+              "elasticloadbalancing.amazonaws.com",
+              "eks.amazonaws.com"
+            ]
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_sts_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.sts_access.arn
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_policy_attachment" {
@@ -46,25 +238,9 @@ resource "aws_iam_role_policy_attachment" "ecr_policy_attachment" {
   policy_arn = aws_iam_policy.ecr_access_policy.arn
 }
 
-resource "aws_iam_policy" "eks_update_kubeconfig_access" {
-  name        = "EKSUpdateKubeconfigAccess"
-  description = "Allow EC2 to call EKS Describe for kubeconfig"
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect   = "Allow",
-        Action   = ["eks:DescribeCluster"],
-        Resource = "*"
-      },
-      {
-        Effect   = "Allow",
-        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParameterHistory"],
-        Resource = "*"
-      }
-    ]
-  })
+resource "aws_iam_role_policy_attachment" "ec2_enhanced_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.ec2_enhanced_access.arn
 }
 
 resource "aws_iam_role_policy_attachment" "eks_kubeconfig_access_attach" {
@@ -72,47 +248,24 @@ resource "aws_iam_role_policy_attachment" "eks_kubeconfig_access_attach" {
   policy_arn = aws_iam_policy.eks_update_kubeconfig_access.arn
 }
 
-resource "aws_iam_policy" "eks_describe_versions" {
-  name        = "EksDescribeClusterVersions"
-  description = "Allow EKS Describe & List actions"
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Effect   = "Allow",
-      Action   = [
-        "eks:DescribeClusterVersions",
-        "eks:DescribeCluster",
-        "eks:ListClusters",
-        "eks:ListUpdates",
-        "eks:DescribeUpdate",
-        "eks:ListNodegroups",
-        "eks:DescribeNodegroup"
-      ],
-      Resource = "*"
-    }]
-  })
-}
-
 resource "aws_iam_role_policy_attachment" "eks_describe_versions_attach" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = aws_iam_policy.eks_describe_versions.arn
 }
 
-locals {
-  ec2_managed_policies = [
-    "arn:aws:iam::aws:policy/AmazonVPCFullAccess",
-    "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess",
-    "arn:aws:iam::aws:policy/IAMFullAccess",
-    "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  ]
+resource "aws_iam_role_policy_attachment" "ssm_limited_access_attach" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.ssm_limited_access.arn
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_managed_policies_attach" {
-  for_each   = toset(local.ec2_managed_policies)
+resource "aws_iam_role_policy_attachment" "iam_limited_access_attach" {
   role       = aws_iam_role.ec2_role.name
-  policy_arn = each.key
+  policy_arn = aws_iam_policy.iam_limited_access.arn
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ecr_readonly" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 data "aws_iam_policy_document" "eks_assume_role_policy" {
@@ -134,14 +287,45 @@ resource "aws_iam_role" "eks_cluster_role" {
   }
 }
 
+resource "aws_iam_policy" "eks_elb_limited" {
+  name        = "${var.project_name}-EKSELBLimited"
+  description = "Limited ELB access for EKS cluster"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:DescribeTags",
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeInstances",
+          "ec2:DescribeNetworkInterfaces"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
   role       = aws_iam_role.eks_cluster_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-resource "aws_iam_role_policy_attachment" "eks_elb_policy" {
+resource "aws_iam_role_policy_attachment" "eks_elb_limited_policy" {
   role       = aws_iam_role.eks_cluster_role.name
-  policy_arn = "arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"
+  policy_arn = aws_iam_policy.eks_elb_limited.arn
 }
 
 data "aws_iam_policy_document" "node_group_assume_role_policy" {
@@ -231,8 +415,8 @@ module "ecr_irsa_role" {
 module "ebs_csi_irsa_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
 
-  role_name                 = "${var.project_name}-ebs-csi-controller-role"
-  attach_ebs_csi_policy     = true
+  role_name             = "${var.project_name}-ebs-csi-controller-role"
+  attach_ebs_csi_policy = true
 
   oidc_providers = {
     main = {
