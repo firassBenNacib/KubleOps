@@ -76,7 +76,7 @@ module "node_group" {
   disk_size                = 20
   desired_size             = 2
   min_size                 = 2
-  max_size                 = 2
+  max_size                 = 10
   k8s_version              = "1.33"
 
   depends_on = [module.eks]

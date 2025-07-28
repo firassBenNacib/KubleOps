@@ -20,7 +20,7 @@ variable "instance_type" {
 
 variable "node_group_instance_type" {
   description = "Instance type for EKS node group"
-  default     = "t3.medium"
+  default     = "m5.xlarge"
 }
 
 variable "key_name" {
