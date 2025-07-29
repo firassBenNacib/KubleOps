@@ -147,7 +147,7 @@ CircleCI automates:
 
 ## Limitations and Next Steps
 
-This setup is production-like, but not fully production-ready. Here's what's still missing or can be improved:
+This setup is production-like, but not fully production-ready.Some limitations that need to be addressed include:
 
 * No network segmentation or Kubernetes network policies
 * No VPC flow logs for traffic visibility and auditing
