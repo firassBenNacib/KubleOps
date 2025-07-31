@@ -43,12 +43,6 @@ echo "[INFO] Installing eksctl..."
 curl -sSL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
 sudo mv /tmp/eksctl /usr/local/bin
 
-echo "[INFO] Installing Trivy..."
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo tee /etc/apt/keyrings/trivy.asc > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-sudo apt update && sudo apt install -y trivy
-
 echo "[INFO] Installing Helm..."
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
