@@ -2,38 +2,38 @@
 
 KubleOps provisions a secure, scalable, and highly available AWS infrastructure for running a multi-tier application on EKS. It uses Terraform modules to deploy a multi-AZ VPC with public and private subnets, dual NAT gateways, an EKS cluster, EC2 nodes, and a bastion host. Applications are deployed with Helm and ArgoCD. CircleCI handles CI/CD, pushing Docker images to ECR. Monitoring and security use Prometheus, Grafana, SonarQube, and Trivy. The AWS ALB Controller enables ingress routing via Application Load Balancers.
 
+Manifests: [KubleOps-manifest](https://github.com/firassBenNacib/KubleOps-manifest)
+
 ## Table of Contents
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Infrastructure Modules](#infrastructure-modules)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Security](#security)
-- [Monitoring](#monitoring)
-- [Limitations and Next Steps](#limitations-and-next-steps)
-- [License](#license)
-- [Author](#author)
-
-
+* [Features](#features)
+* [Architecture](#architecture)
+* [Project Structure](#project-structure)
+* [Installation](#installation)
+* [Infrastructure Modules](#infrastructure-modules)
+* [CI/CD Pipeline](#cicd-pipeline)
+* [Security](#security)
+* [Monitoring](#monitoring)
+* [Next Steps and Improvements](#next-steps-and-improvements)
+* [License](#license)
+* [Author](#author)
 
 ## Features
 
-- Highly available EKS cluster across multiple AZs
-- VPC with public/private subnets and dual NAT gateways
-- Bastion host for secure SSH access
-- Autoscaling EC2 node groups
-- IRSA for secure access to AWS ECR
-- GitOps deployment with Helm and ArgoCD
-- Ingress routing via AWS ALB Controller
-- CI/CD pipeline with CircleCI
-- Monitoring with Prometheus and Grafana
-- Security checks via SonarQube and Trivy
+* Highly available EKS cluster across multiple AZs
+* VPC with public/private subnets and dual NAT gateways
+* Bastion host for secure SSH access
+* Autoscaling EC2 node groups
+* IRSA for secure access to AWS ECR
+* GitOps deployment with Helm and ArgoCD
+* Ingress routing via AWS ALB Controller
+* CI/CD pipeline with CircleCI
+* Monitoring with Prometheus and Grafana
+* Security checks via SonarQube and Trivy
 
 ## Architecture
 
- Architecture diagram placeholder 
+Architecture diagram placeholder
 
 ## Project Structure
 
@@ -65,7 +65,7 @@ KubleOps/
 │   └── ingress/
 └── .circleci/
     └── config.yml
-````
+```
 
 ## Installation
 
@@ -142,23 +142,13 @@ CircleCI automates:
 * Grafana visualizes system and app health
 * Both are deployed via Helm in the EC2 bootstrapping script
 
+## Next Steps and Improvements
 
-
-
-## Limitations and Next Steps
-
-This setup is production-like, but not fully production-ready.Some limitations that need to be addressed include:
-
-* No network segmentation or Kubernetes network policies
-* No VPC flow logs for traffic visibility and auditing
-* No encrypted secrets or external secrets management
-* No automated backups for stateful data
-* No KMS encryption for EBS volumes and EKS secrets
-* No CloudWatch Container Insights for pod-level metrics
-* No AWS WAF or Shield for external-facing services
-* Manual bootstrap process (not fully automated)
-
-
+* Enforce NetworkPolicies (default-deny; allow only required flows).
+* Apply Pod Security Admission (restricted for apps, baseline for system).
+* Use External Secrets Operator + AWS Secrets Manager; enable KMS (EKS secrets/EBS).
+* Enable control plane logs and VPC Flow Logs; add backups/DR.
+* Harden supply chain (CI OIDC, image signing, admission policies); manage addons via Helm/ArgoCD.
 
 ## License
 
