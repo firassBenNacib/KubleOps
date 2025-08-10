@@ -34,7 +34,7 @@ module "nat_gw" {
 
 module "route53_zone" {
   source       = "./modules/route53-zone"
-  zone_name    = var.zone_name 
+  zone_name    = var.zone_name
   private_zone = false
 }
 
@@ -43,7 +43,7 @@ module "iam" {
   project_name      = var.project_name
   iam_role_name     = var.iam_role_name
   oidc_provider_arn = module.eks_oidc.oidc_provider_arn
-  route53_zone_id   = module.route53_zone.zone_id 
+  route53_zone_id   = module.route53_zone.zone_id
 }
 
 module "bastion" {
@@ -109,12 +109,3 @@ module "acm" {
   route53_zone_id = module.route53_zone.zone_id
   tags            = { Name = "${var.project_name}-alb-cert" }
 }
-
-resource "aws_ssm_parameter" "acm_arn" {
-  name  = "/KubleOps/acm_arn" 
-  type  = "String"
-  value = module.acm.certificate_arn
-
-  depends_on = [module.acm]
-}
-

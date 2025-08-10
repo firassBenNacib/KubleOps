@@ -55,13 +55,13 @@ chmod +x /usr/local/bin/kubectl
 
 echo "[INFO] Installing eksctl..."
 curl -sSL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
-sudo mv /tmp/eksctl /usr/local/bin
+mv /tmp/eksctl /usr/local/bin
 
 echo "[INFO] Installing Trivy..."
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo tee /etc/apt/keyrings/trivy.asc > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-sudo apt update && sudo apt install -y trivy
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | tee /etc/apt/keyrings/trivy.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/trivy.list
+apt-get update -y && apt-get install -y trivy
 
 echo "[INFO] Installing Helm..."
 curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -88,7 +88,7 @@ kubectl get nodes || echo "[WARN] kubectl may not be fully ready yet."
 
 echo "[INFO] Installing AWS Load Balancer Controller CRDs..."
 curl -fsSL -o /tmp/alb-crds.yaml https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml
-kubectl apply -f /tmp/alb-crds.yaml
+kubectl apply -n kube-system -f /tmp/alb-crds.yaml
 
 ALB_ROLE_ARN="$(aws iam get-role --role-name AmazonEKSLoadBalancerControllerRole --query "Role.Arn" --output text)"
 
@@ -159,16 +159,31 @@ kubectl delete ns monitoring --ignore-not-found
 kubectl create namespace monitoring
 helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --wait
 
+echo "[INFO] Setting up port-forwards for Grafana (3000) and Prometheus (9090)..."
+set +e
+GF_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+PROM_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+set -e
+[[ -z "${GF_SVC:-}" ]] && GF_SVC="monitoring-grafana"
+[[ -z "${PROM_SVC:-}" ]] && PROM_SVC="monitoring-kube-prometheus-prometheus"
+
+pkill -f "kubectl -n monitoring port-forward svc/${GF_SVC} 3000:80" || true
+pkill -f "kubectl -n monitoring port-forward svc/${PROM_SVC} 9090:9090" || true
+
+nohup kubectl -n monitoring port-forward "svc/${GF_SVC}" 3000:80  >/var/log/grafana-portforward.log 2>&1 &
+nohup kubectl -n monitoring port-forward "svc/${PROM_SVC}" 9090:9090 >/var/log/prom-portforward.log  2>&1 &
+
 echo "[INFO] Installing Argo CD (ClusterIP)..."
 kubectl create namespace argocd || true
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.4.7/manifests/install.yaml || true
 kubectl rollout status deploy/argocd-server -n argocd
 
 echo "[INFO] Port-forwarding ArgoCD server to localhost:8443 ..."
+pkill -f "kubectl -n argocd port-forward svc/argocd-server 8443:443" || true
 nohup kubectl -n argocd port-forward svc/argocd-server 8443:443 >/var/log/argocd-portforward.log 2>&1 &
 sleep 5
 
-ARGOCD_PASS="$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)"
+ARGOCD_PASS="$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d)"
 
 echo "[INFO] Applying Argo CD bootstrap..."
 rm -rf /tmp/KubleOps-manifest
@@ -217,11 +232,14 @@ argocd app sync kubleops --grpc-web
 
 echo
 echo "========= FINAL SUMMARY ========="
-echo "SonarQube (public for CI):  http://${EC2_PUBLIC_IP}:${SONAR_PORT}"
+echo "SonarQube (public for CI):       http://${EC2_PUBLIC_IP}:${SONAR_PORT}"
+echo "ArgoCD (via bastion tunnel):     https://localhost:8443"
+echo "Grafana (via bastion tunnel):    http://localhost:3000"
+echo "Prometheus (via bastion tunnel): http://localhost:9090"
 echo
-echo "ArgoCD / Grafana / Prometheus are private (ClusterIP)."
-echo "Access via bastion + tunnels or from this EC2 using kubectl port-forward."
+echo "ArgoCD initial admin password:   ${ARGOCD_PASS}"
 echo
+echo "ArgoCD / Grafana / Prometheus are ClusterIP; access via this EC2 (port-forward) + your bastion tunnel."
 echo "ExternalDNS manages A/AAAA + TXT in ${APEX_ZONE} for app/api ingress hosts."
 echo "================================="
 echo "[SUCCESS] Provisioning finished at $(date)"

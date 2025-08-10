@@ -11,3 +11,4 @@ output "instance_public_ip" {
 output "ec2_private_ip" {
   value = aws_instance.ec2_instance.private_ip
 }
+
