@@ -26,4 +26,3 @@ k8s/secrets/backend-docker-secret.yaml
 *.rar
 terraform/backend.tf
 terraform/terraform.tfvars
-terraform/ssh-bastion.sh
