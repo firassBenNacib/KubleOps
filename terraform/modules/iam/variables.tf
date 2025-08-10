@@ -9,3 +9,8 @@ variable "iam_role_name" {
 variable "oidc_provider_arn" {
   type = string
 }
+
+variable "route53_zone_id" {
+  description = "Hosted zone ID used by ExternalDNS for DNS updates"
+  type        = string
+}

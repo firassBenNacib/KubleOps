@@ -8,6 +8,11 @@ variable "igw_name" {
   default     = "KubleOps-server-igw"
 }
 
+variable "zone_name" {
+  description = "Existing Route 53 hosted zone (apex)"
+  type        = string
+}
+
 variable "instance_name" {
   description = "Name for the EC2 instance"
   default     = "KubleOps-server"

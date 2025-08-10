@@ -37,4 +37,3 @@ variable "volume_size" {
   description = "Size of the root volume in GB"
   type        = number
 }
-

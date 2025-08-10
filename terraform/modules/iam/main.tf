@@ -425,3 +425,67 @@ module "ebs_csi_irsa_role" {
     }
   }
 }
+
+resource "aws_iam_policy" "external_dns_route53" {
+  name        = "${var.project_name}-ExternalDNS-Route53"
+  description = "Allow ExternalDNS to manage DNS records in a specific hosted zone"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+
+      {
+        Effect   = "Allow",
+        Action   = ["route53:ChangeResourceRecordSets"],
+        Resource = "arn:aws:route53:::hostedzone/${var.route53_zone_id}"
+      },
+
+      {
+        Effect   = "Allow",
+        Action   = [
+          "route53:ListHostedZones",
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource",
+          "route53:GetHostedZone"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+module "external_dns_irsa_role" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "5.59.0"
+
+  create_role = true
+  role_name   = "${var.project_name}-external-dns-role"
+
+  role_policy_arns = {
+    Route53 = aws_iam_policy.external_dns_route53.arn
+  }
+
+  oidc_providers = {
+    eks = {
+      provider_arn               = var.oidc_provider_arn
+      namespace_service_accounts = ["external-dns:external-dns"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "acm_readonly_limited" {
+  name        = "${var.project_name}-ACMReadOnlyLimited"
+  description = "Allow listing/reading ACM certs"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      { Effect = "Allow", Action = ["acm:ListCertificates"], Resource = "*" },
+      { Effect = "Allow", Action = ["acm:DescribeCertificate","acm:GetCertificate"], Resource = "*" }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_acm_readonly_attach" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.acm_readonly_limited.arn
+}
