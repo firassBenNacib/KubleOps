@@ -1,7 +1,8 @@
 variable "zone_name" {
-  description = "Public hosted zone name"
+  description = "Name of the Route 53 hosted zone"
   type        = string
 }
+
 
 variable "private_zone" {
   description = "Set true if this is a private hosted zone"

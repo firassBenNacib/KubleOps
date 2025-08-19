@@ -26,7 +26,7 @@ resource "aws_instance" "ec2_instance" {
     volume_size = var.volume_size
   }
 
-  user_data = file("${path.module}/user-data-scripts/prepare-tools.sh")
+  user_data_base64 = filebase64("${path.module}/user-data-scripts/prepare-tools.sh")
 
   tags = {
     Name = var.instance_name

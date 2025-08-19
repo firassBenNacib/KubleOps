@@ -17,8 +17,6 @@ resource "aws_nat_gateway" "nat_gw_a" {
   tags = {
     Name = "nat-gw-a"
   }
-
-  depends_on = [var.igw_id]
 }
 
 resource "aws_nat_gateway" "nat_gw_b" {
@@ -28,8 +26,6 @@ resource "aws_nat_gateway" "nat_gw_b" {
   tags = {
     Name = "nat-gw-b"
   }
-
-  depends_on = [var.igw_id]
 }
 
 resource "aws_route_table" "private_rt_a" {

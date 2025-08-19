@@ -6,11 +6,7 @@ resource "aws_eks_cluster" "eks_cluster" {
   vpc_config {
     endpoint_public_access  = false
     endpoint_private_access = true
-
-    subnet_ids = [
-      var.pri_subnet_3a_id,
-      var.pri_subnet_4b_id
-    ]
+    subnet_ids              = [var.pri_subnet_3a_id, var.pri_subnet_4b_id]
   }
 
   access_config {
@@ -18,9 +14,9 @@ resource "aws_eks_cluster" "eks_cluster" {
     bootstrap_cluster_creator_admin_permissions = true
   }
 
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
   tags = {
     Name = "${var.project_name}-eks-cluster"
   }
-
-  depends_on = [var.eks_cluster_role_arn]
 }

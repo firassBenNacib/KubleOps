@@ -2,19 +2,21 @@
 set -euo pipefail
 
 LOG_FILE="/var/log/prepare-tools.log"
-exec > >(tee -i "$LOG_FILE")
-exec 2>&1
+exec > >(tee -i "$LOG_FILE") 2>&1
 
-echo "[START] Provisioning started at $(date)"
+STEP_NO=0
+step(){ STEP_NO=$((STEP_NO+1)); echo -e "\n=== [STEP $STEP_NO] $* ==="; }
+die(){ echo "[ERROR] $*" >&2; exit 1; }
+trap 'echo "[FAIL] at line $LINENO"; exit 1' ERR
 
 export AWS_REGION="us-east-1"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 export CLUSTER_NAME="KubleOps"
 export KUBECONFIG="/root/.kube/config"
+export HOME="/root"
 
-SONAR_PORT=9000
-
-APEX_ZONE="firasbennacib.com"
+SUB_SUFFIX="devops.firasbennacib.com"
+PARENT_ZONE="firasbennacib.com"
 TXT_OWNER_ID="$CLUSTER_NAME"
 TXT_PREFIX="external-dns"
 
@@ -25,221 +27,292 @@ FRONTEND_IRSA_ROLE_NAME="KubleOps-ecr-access-role"
 ACM_SSM_PARAM="/KubleOps/acm_arn"
 CERT_DOMAIN="*.devops.firasbennacib.com"
 
-echo "[INFO] Installing base packages..."
-apt-get update -y
-apt-get install -y docker.io unzip curl wget jq gnupg lsb-release apt-transport-https bash-completion git
+APP_NAME="kubleops"
 
-echo "[INFO] Enabling Docker..."
-usermod -aG docker ubuntu || true
-systemctl enable docker
-systemctl restart docker
-chmod 666 /var/run/docker.sock || true
+KARPENTER_VERSION="1.6.2"
+KARPENTER_CRD_VERSION="1.6.2"
+KARPENTER_NS="kube-system"
+KARPENTER_SA="karpenter"
 
-echo "[INFO] Starting SonarQube on :${SONAR_PORT} ..."
-docker run -d --name sonar -p ${SONAR_PORT}:${SONAR_PORT} sonarqube:lts-community || echo "[WARN] SonarQube may already be running."
-EC2_PUBLIC_IP="$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)"
+curl_retry(){
+  local u="$1" o="$2" n=1
+  while :; do
+    echo "[DL] $u (try $n)"
+    if curl -fsSL --retry 5 --retry-connrefused --retry-delay 2 -o "$o" "$u"; then return 0; fi
+    (( n>=5 )) && die "download failed: $u"
+    sleep $((2**n)); ((n++))
+  done
+}
+ns(){ kubectl get ns "$1" >/dev/null 2>&1 || kubectl create ns "$1"; }
+pf(){
+  local ns="$1" svc="$2" map="$3"
+  pkill -f "kubectl -n $ns port-forward svc/$svc $map" >/dev/null 2>&1 || true
+  nohup kubectl -n "$ns" port-forward "svc/$svc" $map >/var/log/${svc}-pf.log 2>&1 &
+}
 
-if ! command -v aws &>/dev/null; then
-  echo "[INFO] Installing AWS CLI..."
-  curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-  unzip -q /tmp/awscliv2.zip -d /tmp
-  /tmp/aws/install
+wait_for_noop(){
+  local app="$1" timeout="${2:-1800}"
+  echo "[ARGOCD] waiting for no running operation on app '${app}'..."
+
+  argocd app wait "$app" --operation --timeout "$timeout" --grpc-web || true
+
+  until argocd app wait "$app" --operation --timeout 15 --grpc-web >/dev/null 2>&1; do
+    sleep 5
+  done
+}
+
+safe_argocd_app_set(){ 
+  local app="$1"; shift
+  for i in {1..6}; do
+    if argocd app set "$app" --grpc-web "$@"; then return 0; fi
+    echo "[ARGOCD] app set collided with a running operation; waiting & retrying ($i/6)..."
+    wait_for_noop "$app" 300
+    sleep 5
+  done
+  die "argocd app set failed after retries"
+}
+
+
+step "Ensure SSM agent and base packages"
+if ! systemctl is-active --quiet amazon-ssm-agent && ! systemctl is-active --quiet snap.amazon-ssm-agent.amazon-ssm-agent.service; then
+  apt-get update -y && apt-get install -y snapd
+  snap install amazon-ssm-agent --classic || true
+  systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || systemctl enable --now amazon-ssm-agent || true
 fi
-aws --version
-AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query "Account" --output text)"
-export AWS_ACCOUNT_ID
 
-echo "[INFO] Installing kubectl..."
-curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.28.4/bin/linux/amd64/kubectl"
-chmod +x /usr/local/bin/kubectl
+apt-get update -y
+apt-get install -y ca-certificates unzip curl wget jq gnupg lsb-release apt-transport-https bash-completion git tar
+mkdir -p /root/.{kube,argocd}
 
-echo "[INFO] Installing eksctl..."
-curl -sSL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
-mv /tmp/eksctl /usr/local/bin
+step "Install or verify AWS CLI"
+if ! command -v aws >/dev/null; then
+  curl_retry "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install
+fi
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 
-echo "[INFO] Installing Trivy..."
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | tee /etc/apt/keyrings/trivy.asc > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/trivy.list
-apt-get update -y && apt-get install -y trivy
-
-echo "[INFO] Installing Helm..."
-curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-echo "[INFO] Installing ArgoCD CLI..."
-curl -fsSL -o /usr/local/bin/argocd "https://github.com/argoproj/argo-cd/releases/download/v2.4.7/argocd-linux-amd64"
-chmod +x /usr/local/bin/argocd
-
-echo "[INFO] Waiting for EKS cluster '$CLUSTER_NAME' to become ACTIVE..."
+step "Wait for EKS cluster to be ACTIVE"
 until [[ "$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query "cluster.status" --output text)" == "ACTIVE" ]]; do
-  echo "[WAIT] EKS is not ready yet..."
-  sleep 15
+  echo "[WAIT] EKS cluster state ..."
+  sleep 10
 done
 
-echo "[INFO] Configuring kubeconfig..."
-mkdir -p /root/.kube
+step "Install kubectl, Helm, ArgoCD CLI, eksctl"
+K8S_MINOR="$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query "cluster.version" --output text 2>/dev/null || echo "1.28")"
+KREL="$(curl -fsSL "https://dl.k8s.io/release/stable-${K8S_MINOR}.txt" 2>/dev/null || echo "v1.28.4")"
+curl_retry "https://dl.k8s.io/release/${KREL}/bin/linux/amd64/kubectl" /usr/local/bin/kubectl || curl_retry "https://dl.k8s.io/release/v1.28.4/bin/linux/amd64/kubectl" /usr/local/bin/kubectl
+chmod +x /usr/local/bin/kubectl
+curl_retry "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" /tmp/get-helm-3 && bash /tmp/get-helm-3
+ARGOCD_VERSION="v3.1.0"
+curl_retry "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64" /usr/local/bin/argocd
+chmod +x /usr/local/bin/argocd
+if ! command -v eksctl >/dev/null; then
+  curl_retry "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" /tmp/eksctl.tgz
+  tar -xzf /tmp/eksctl.tgz -C /usr/local/bin
+  chmod +x /usr/local/bin/eksctl
+fi
+
+step "Configure kubeconfig for root and ubuntu"
 aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME"
+install -d -o ubuntu -g ubuntu /home/ubuntu/.kube
+cp -f /root/.kube/config /home/ubuntu/.kube/config
+chown -R ubuntu:ubuntu /home/ubuntu/.kube
 
-mkdir -p /home/ubuntu/.kube
-cp -f /root/.kube/config /home/ubuntu/.kube/config || true
-chown -R ubuntu:ubuntu /home/ubuntu/.kube || true
+step "Discover VPC info"
+VPC_ID="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" --query "cluster.resourcesVpcConfig.vpcId" --output text)"
+VPC_CIDR="$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" --query 'Vpcs[0].CidrBlock' --output text)"
+CLUSTER_ENDPOINT="$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query "cluster.endpoint" --output text)"
 
-kubectl get nodes || echo "[WARN] kubectl may not be fully ready yet."
+step "Wait for core EKS components"
+kubectl -n kube-system rollout status ds/aws-node --timeout=5m
+kubectl -n kube-system rollout status deploy/coredns --timeout=5m
+kubectl -n kube-system rollout status ds/kube-proxy --timeout=5m || true
+kubectl -n kube-system rollout status deploy/ebs-csi-controller --timeout=5m || true
+kubectl -n kube-system rollout status ds/ebs-csi-node --timeout=5m || true
+kubectl -n kube-system rollout status ds/fluent-bit --timeout=5m || true
+kubectl -n kube-system rollout status deploy/metrics-server --timeout=5m || true
 
-echo "[INFO] Installing AWS Load Balancer Controller CRDs..."
-curl -fsSL -o /tmp/alb-crds.yaml https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml
-kubectl apply -n kube-system -f /tmp/alb-crds.yaml
-
-ALB_ROLE_ARN="$(aws iam get-role --role-name AmazonEKSLoadBalancerControllerRole --query "Role.Arn" --output text)"
-
-kubectl create serviceaccount aws-load-balancer-controller -n kube-system || true
-kubectl annotate serviceaccount aws-load-balancer-controller -n kube-system "eks.amazonaws.com/role-arn=${ALB_ROLE_ARN}" --overwrite
-
-helm repo add eks https://aws.github.io/eks-charts
+step "Add Helm repos and update"
+helm repo add eks https://aws.github.io/eks-charts || true
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ || true
+helm repo add argo https://argoproj.github.io/argo-helm || true
 helm repo update
 
-VPC_ID="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" --query "cluster.resourcesVpcConfig.vpcId" --output text)"
+step "Install kube-prometheus-stack"
+ns monitoring
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring \
+  --set kubeStateMetrics.enabled=false \
+  --set nodeExporter.enabled=false \
+  --wait
 
-echo "[INFO] Deploying AWS Load Balancer Controller..."
-helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system \
+step "Port-forward Grafana (3000) and Prometheus (9090)"
+GF_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo monitoring-grafana)"
+PM_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo monitoring-kube-prometheus-prometheus)"
+pf monitoring "$GF_SVC" "3000:80"
+pf monitoring "$PM_SVC" "9090:9090"
+GRAFANA_PASS="$(kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || true)"
+
+step "Install AWS Load Balancer Controller CRDs (raw YAML)"
+curl -fsSL https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml -o /tmp/alb-crds.yaml
+kubectl apply -f /tmp/alb-crds.yaml
+until kubectl get crd targetgroupbindings.elbv2.k8s.aws >/dev/null 2>&1; do sleep 2; done
+
+step "Install AWS Load Balancer Controller via Helm"
+ALB_ROLE_ARN="$(aws iam get-role --role-name AmazonEKSLoadBalancerControllerRole --query "Role.Arn" --output text 2>/dev/null || true)"
+[[ -z "${ALB_ROLE_ARN:-}" || "${ALB_ROLE_ARN}" == "None" ]] && die "Missing IRSA role: AmazonEKSLoadBalancerControllerRole"
+helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system \
   --set clusterName="$CLUSTER_NAME" \
   --set region="$AWS_REGION" \
   --set vpcId="$VPC_ID" \
-  --set serviceAccount.create=false \
-  --set serviceAccount.name=aws-load-balancer-controller
-
-kubectl rollout status deployment/aws-load-balancer-controller -n kube-system
-
-echo "[INFO] Installing ExternalDNS (cleanup pass: policy=sync)..."
-helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
-helm repo update
-
-EXTERNAL_DNS_ROLE_ARN="$(aws iam get-role --role-name "KubleOps-external-dns-role" --query "Role.Arn" --output text || true)"
-kubectl create namespace external-dns || true
-
-helm upgrade --install external-dns external-dns/external-dns \
-  -n external-dns \
-  --set provider=aws \
-  --set policy=sync \
-  --set registry=txt \
-  --set "sources={ingress}" \
-  --set "domainFilters={${APEX_ZONE}}" \
-  --set txtOwnerId="${TXT_OWNER_ID}" \
-  --set txtPrefix="${TXT_PREFIX}" \
-  --set interval=30s \
   --set serviceAccount.create=true \
-  --set serviceAccount.name=external-dns \
-  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${EXTERNAL_DNS_ROLE_ARN}"
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ALB_ROLE_ARN" \
+  --set metrics.enabled=true \
+  --set serviceMonitor.enabled=true \
+  --set serviceMonitor.namespace=monitoring \
+  --wait
+kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=5m
 
-sleep 60
-kubectl -n external-dns logs deploy/external-dns | tail -n 200 || true
+step "Discover Karpenter IRSA role, node role, and interruption queue"
+KARPENTER_ROLE_ARN="$(aws iam get-role --role-name "${CLUSTER_NAME}-karpenter" --query "Role.Arn" --output text 2>/dev/null || true)"
+[[ -z "${KARPENTER_ROLE_ARN:-}" || "${KARPENTER_ROLE_ARN}" == "None" ]] && die "Missing IRSA role for Karpenter (${CLUSTER_NAME}-karpenter)"
+KARPENTER_NODE_ROLE_NAME="KarpenterNodeRole-${CLUSTER_NAME}"
+KARPENTER_NODE_ROLE_ARN="$(aws iam get-role --role-name "${KARPENTER_NODE_ROLE_NAME}" --query "Role.Arn" --output text 2>/dev/null || true)"
+[[ -z "${KARPENTER_NODE_ROLE_ARN:-}" || "${KARPENTER_NODE_ROLE_ARN}" == "None" ]] && die "Missing Karpenter node role: ${KARPENTER_NODE_ROLE_NAME}"
+INTERRUPTION_QUEUE_NAME="${CLUSTER_NAME}"
 
-echo "[INFO] Switching ExternalDNS to steady-state (policy=upsert-only)..."
-helm upgrade --install external-dns external-dns/external-dns \
-  -n external-dns \
-  --set provider=aws \
-  --set policy=upsert-only \
-  --set registry=txt \
-  --set "sources={ingress}" \
-  --set "domainFilters={${APEX_ZONE}}" \
-  --set txtOwnerId="${TXT_OWNER_ID}" \
-  --set txtPrefix="${TXT_PREFIX}" \
-  --set interval=1m \
+step "Grant Karpenter node access via EKS Access Entries"
+aws eks create-access-entry \
+  --cluster-name "$CLUSTER_NAME" \
+  --principal-arn "$KARPENTER_NODE_ROLE_ARN" \
+  --type EC2_LINUX >/dev/null 2>&1 || true
+if ! aws eks describe-access-entry \
+  --cluster-name "$CLUSTER_NAME" \
+  --principal-arn "$KARPENTER_NODE_ROLE_ARN" \
+  --query 'accessEntry.[principalArn,type,kubernetesGroups]' --output table >/dev/null 2>&1; then
+  echo "[WARN] eks:DescribeAccessEntry not allowed yet for this instance role; ensure policy permits it on the access-entry ARN."
+fi
+
+helm registry logout public.ecr.aws || true
+
+step "Install/upgrade Karpenter CRDs and controller"
+helm upgrade --install karpenter-crd oci://public.ecr.aws/karpenter/karpenter-crd \
+  --version "${KARPENTER_CRD_VERSION}" \
+  --namespace "${KARPENTER_NS}" --create-namespace --wait
+
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
+  --version "${KARPENTER_VERSION}" \
+  --namespace "${KARPENTER_NS}" \
+  --set "settings.clusterName=${CLUSTER_NAME}" \
+  --set "settings.clusterEndpoint=${CLUSTER_ENDPOINT}" \
+  --set "settings.interruptionQueue=${INTERRUPTION_QUEUE_NAME}" \
   --set serviceAccount.create=true \
-  --set serviceAccount.name=external-dns \
-  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${EXTERNAL_DNS_ROLE_ARN}"
+  --set "serviceAccount.name=${KARPENTER_SA}" \
+  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_ROLE_ARN}" \
+  --wait
+kubectl -n "${KARPENTER_NS}" rollout status deploy/karpenter --timeout=10m
 
-kubectl rollout status deployment/external-dns -n external-dns
 
-echo "[INFO] Installing Prometheus & Grafana (ClusterIP)..."
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-kubectl delete ns monitoring --ignore-not-found
-kubectl create namespace monitoring
-helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --wait
+step "Install Argo CD (Helm, with ServiceMonitors)"
+ns argocd
+helm upgrade --install argocd argo/argo-cd -n argocd \
+  --set server.metrics.enabled=true \
+  --set server.serviceMonitor.enabled=true \
+  --set repoServer.metrics.enabled=true \
+  --set repoServer.serviceMonitor.enabled=true \
+  --set controller.metrics.enabled=true \
+  --set controller.serviceMonitor.enabled=true \
+  --wait
 
-echo "[INFO] Setting up port-forwards for Grafana (3000) and Prometheus (9090)..."
-set +e
-GF_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
-PROM_SVC="$(kubectl -n monitoring get svc -l app.kubernetes.io/name=prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
-set -e
-[[ -z "${GF_SVC:-}" ]] && GF_SVC="monitoring-grafana"
-[[ -z "${PROM_SVC:-}" ]] && PROM_SVC="monitoring-kube-prometheus-prometheus"
+ARGOCD_SVC="$(kubectl -n argocd get svc -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].metadata.name}')"
+ARGOCD_DEPLOY="$(kubectl -n argocd get deploy -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n argocd rollout status "deploy/${ARGOCD_DEPLOY}" --timeout=10m
 
-pkill -f "kubectl -n monitoring port-forward svc/${GF_SVC} 3000:80" || true
-pkill -f "kubectl -n monitoring port-forward svc/${PROM_SVC} 9090:9090" || true
-
-nohup kubectl -n monitoring port-forward "svc/${GF_SVC}" 3000:80  >/var/log/grafana-portforward.log 2>&1 &
-nohup kubectl -n monitoring port-forward "svc/${PROM_SVC}" 9090:9090 >/var/log/prom-portforward.log  2>&1 &
-
-echo "[INFO] Installing Argo CD (ClusterIP)..."
-kubectl create namespace argocd || true
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.4.7/manifests/install.yaml || true
-kubectl rollout status deploy/argocd-server -n argocd
-
-echo "[INFO] Port-forwarding ArgoCD server to localhost:8443 ..."
-pkill -f "kubectl -n argocd port-forward svc/argocd-server 8443:443" || true
-nohup kubectl -n argocd port-forward svc/argocd-server 8443:443 >/var/log/argocd-portforward.log 2>&1 &
+step "Port-forward ArgoCD to https://localhost:8443"
+pf argocd "${ARGOCD_SVC}" "8443:443"
 sleep 5
+ARGOCD_PASS="$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 
-ARGOCD_PASS="$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d)"
+step "Resolve ACM cert ARN"
+ACM_ARN="$(aws ssm get-parameter --name "${ACM_SSM_PARAM}" --query 'Parameter.Value' --output text 2>/dev/null || true)"
+if [[ -z "${ACM_ARN:-}" || "${ACM_ARN}" == "None" ]]; then
+  ACM_ARN="$(aws acm list-certificates --includes keyTypes=RSA_2048,RSA_4096,EC_prime256v1,EC_secp384r1 \
+    --query "CertificateSummaryList[?DomainName=='${CERT_DOMAIN}' && Status=='ISSUED'].CertificateArn | [0]" --output text)"
+fi
+[[ -z "${ACM_ARN:-}" || "${ACM_ARN}" == "None" ]] && die "ACM not found for ${CERT_DOMAIN}"
 
-echo "[INFO] Applying Argo CD bootstrap..."
-rm -rf /tmp/KubleOps-manifest
+step "Install ExternalDNS (Helm + IRSA)"
+ns external-dns
+EXTERNAL_DNS_ROLE_ARN="$(aws iam get-role --role-name "${CLUSTER_NAME}-external-dns-role" --query "Role.Arn" --output text 2>/dev/null || true)"
+if [[ -z "${EXTERNAL_DNS_ROLE_ARN:-}" || "${EXTERNAL_DNS_ROLE_ARN}" == "None" ]]; then
+  EXTERNAL_DNS_ROLE_ARN="$(aws iam get-role --role-name "KubleOps-external-dns-role" --query "Role.Arn" --output text 2>/dev/null || true)"
+fi
+[[ -z "${EXTERNAL_DNS_ROLE_ARN:-}" || "${EXTERNAL_DNS_ROLE_ARN}" == "None" ]] && die "Missing IRSA role for ExternalDNS"
+
+ZONE_ID_ROOT="$(aws route53 list-hosted-zones-by-name --dns-name "${PARENT_ZONE}" \
+  --query 'HostedZones[0].Id' --output text 2>/dev/null | sed 's|/hostedzone/||' || true)"
+if [[ -n "${ZONE_ID_ROOT:-}" && "${ZONE_ID_ROOT}" != "None" ]]; then
+  ZONE_FILTER_ARGS=( --set-string "zoneIdFilters[0]=${ZONE_ID_ROOT}" )
+else
+  ZONE_FILTER_ARGS=()
+fi
+
+helm upgrade --install external-dns external-dns/external-dns -n external-dns \
+  --set "sources={service,ingress}" \
+  --set-string "domainFilters[0]=${PARENT_ZONE}" ${ZONE_FILTER_ARGS[@]} \
+  --set txtOwnerId="${TXT_OWNER_ID}" \
+  --set txtPrefix="${TXT_PREFIX}" \
+  --set serviceAccount.create=true \
+  --set serviceAccount.name=external-dns \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${EXTERNAL_DNS_ROLE_ARN}" \
+  --set serviceMonitor.enabled=true \
+  --set serviceMonitor.namespace=monitoring \
+  --set env[0].name=AWS_DEFAULT_REGION \
+  --set env[0].value="${AWS_REGION}" \
+  --set interval=5m \
+  --set policy=sync \
+  --set provider.name=aws \
+  --set-string 'extraArgs[0]=--regex-domain-exclusion=^_.*' \
+  --set-string 'extraArgs[1]=--events' \
+  --set-string 'extraArgs[2]=--min-event-sync-interval=5m' \
+  --set-string 'extraArgs[3]=--aws-zones-cache-duration=1h' \
+  --set-string 'extraArgs[4]=--aws-zone-type=public' \
+  --wait
+
+kubectl -n external-dns rollout status deploy/external-dns --timeout=3m || true
+
+
 git clone https://github.com/firassBenNacib/KubleOps-manifest.git /tmp/KubleOps-manifest
 kubectl apply -f /tmp/KubleOps-manifest/argocd-sync.yaml
 
-echo "[INFO] Waiting for ArgoCD app 'kubleops' to exist..."
-until kubectl get applications.argoproj.io -n argocd kubleops >/dev/null 2>&1; do
-  sleep 5
-done
 
-echo "[INFO] Resolving ACM certificate ARN for ${CERT_DOMAIN} ..."
-set +e
-ACM_ARN="$(aws ssm get-parameter --name "${ACM_SSM_PARAM}" --query 'Parameter.Value' --output text 2>/dev/null)"
-set -e
-if [[ -z "${ACM_ARN:-}" || "${ACM_ARN}" == "None" ]]; then
-  echo "[INFO] SSM param not found; listing ACM certificates..."
-  ACM_ARN="$(aws acm list-certificates \
-    --includes keyTypes=RSA_2048,RSA_4096,EC_prime256v1,EC_secp384r1 \
-    --query "CertificateSummaryList[?DomainName=='${CERT_DOMAIN}' && Status=='ISSUED'].CertificateArn | [0]" \
-    --output text)"
-fi
-if [[ -z "${ACM_ARN:-}" || "${ACM_ARN}" == "None" ]]; then
-  echo "[ERROR] Could not resolve ACM ARN for ${CERT_DOMAIN}"
-  exit 1
-fi
-echo "[INFO] Using ACM ARN: $ACM_ARN"
 
-echo "[INFO] Logging into ArgoCD CLI over localhost:8443 ..."
+step "Login to Argo CD"
 argocd login localhost:8443 --username admin --password "$ARGOCD_PASS" --insecure --grpc-web
 
-BACKEND_IRSA="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${BACKEND_IRSA_ROLE_NAME}"
-FRONTEND_IRSA="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${FRONTEND_IRSA_ROLE_NAME}"
+step "Wait for initial Argo CD operation(s) to finish for ${APP_NAME}"
+wait_for_noop "$APP_NAME" 1800   
 
-echo "[INFO] Injecting Helm values into Argo CD app..."
-argocd app set kubleops \
-  --helm-set backend.irsaRoleArn="$BACKEND_IRSA" \
-  --helm-set frontend.irsaRoleArn="$FRONTEND_IRSA" \
+step "Disable auto-sync temporarily (if enabled)"
+safe_argocd_app_set "$APP_NAME" --sync-policy none
+
+wait_for_noop "$APP_NAME" 600
+
+step "Set Helm values (IRSA, ACM, Ingress group, VPC CIDR)"
+safe_argocd_app_set "$APP_NAME" \
+  --helm-set backend.irsaRoleArn="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${BACKEND_IRSA_ROLE_NAME}" \
+  --helm-set frontend.irsaRoleArn="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${FRONTEND_IRSA_ROLE_NAME}" \
   --helm-set ingress.certificateArn="$ACM_ARN" \
   --helm-set ingress.groupName="$INGRESS_GROUP" \
   --helm-set-string ingress.sslRedirect="$SSL_REDIRECT" \
-  --grpc-web
+  --helm-set-string 'networkPolicy.vpcCidrs[0]'"=$VPC_CIDR"
 
-echo "[INFO] Syncing application 'kubleops'..."
-argocd app sync kubleops --grpc-web
+step "Sync once with overrides, then re-enable auto-sync"
+argocd app sync "$APP_NAME" --grpc-web --prune
+argocd app wait "$APP_NAME" --grpc-web --operation --timeout 1800
+safe_argocd_app_set "$APP_NAME" --sync-policy automated || true
 
-echo
-echo "========= FINAL SUMMARY ========="
-echo "SonarQube (public for CI):       http://${EC2_PUBLIC_IP}:${SONAR_PORT}"
-echo "ArgoCD (via bastion tunnel):     https://localhost:8443"
-echo "Grafana (via bastion tunnel):    http://localhost:3000"
-echo "Prometheus (via bastion tunnel): http://localhost:9090"
-echo
-echo "ArgoCD initial admin password:   ${ARGOCD_PASS}"
-echo
-echo "ArgoCD / Grafana / Prometheus are ClusterIP; access via this EC2 (port-forward) + your bastion tunnel."
-echo "ExternalDNS manages A/AAAA + TXT in ${APEX_ZONE} for app/api ingress hosts."
-echo "================================="
-echo "[SUCCESS] Provisioning finished at $(date)"
+echo "[OK] KubleOps tools prepared successfully."
+echo "Admin pw (ArgoCD): ${ARGOCD_PASS}"
+echo "Admin pw (Grafana): ${GRAFANA_PASS}"
