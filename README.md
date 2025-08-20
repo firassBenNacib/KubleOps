@@ -35,7 +35,7 @@ Manifests: [KubleOps-manifest](https://github.com/firassBenNacib/KubleOps-manife
 
 ## Architecture
 
-Architecture diagram placeholder
+![KubleOps architecture](KubleOps-architecture.gif)
 
 ## Project Structure
 
