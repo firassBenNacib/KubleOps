@@ -1,25 +1,15 @@
-variable "region" {
-  description = "AWS region where resources will be created"
-  type        = string
-}
-
 variable "project_name" {
-  description = "Name of the project used for tagging resources"
+  description = "Project name for tagging"
   type        = string
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
+  description = "VPC CIDR"
   type        = string
 }
 
 variable "vpc_name" {
-  description = "Name tag for the VPC"
-  type        = string
-}
-
-variable "igw_name" {
-  description = "Name tag for the Internet Gateway"
+  description = "VPC name"
   type        = string
 }
 
@@ -63,80 +53,96 @@ variable "pri_subnet_4b_name" {
   type        = string
 }
 
-variable "route_table_name" {
-  description = "Name tag for the public route table"
-  type        = string
-}
-
 variable "security_group_name" {
   description = "Name tag for the default security group"
   type        = string
 }
 
 variable "enable_bastion" {
-  description = "Whether to enable the bastion host"
+  description = "Whether to create the bastion security group"
   type        = bool
 }
 
 variable "allowed_ssh_cidr" {
-  description = "CIDR block allowed to access the bastion host via SSH"
+  description = "CIDR allowed to access the bastion via SSH (only used if enable_bastion=true)"
   type        = string
 }
 
-variable "enable_ssm_endpoints" {
-  description = "Enable SSM and related VPC endpoints"
+variable "enable_nat_gateway" {
+  description = "Create NAT gateway(s) inside the VPC module"
   type        = bool
-  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "If true, create only one NAT gateway (cost saver). If false, one per AZ."
+  type        = bool
+}
+
+variable "enable_ssm_endpoints" {
+  description = "Enable SSM + related interface endpoints (ssm, ssmmessages, ec2messages)"
+  type        = bool
 }
 
 variable "enable_ecr_cw_endpoints" {
-  description = "Enable ECR and CloudWatch VPC endpoints"
+  description = "Enable ECR (api,dkr) and CloudWatch Logs interface endpoints"
   type        = bool
-  default     = true
+}
+
+variable "enable_monitoring_endpoint" {
+  description = "Enable CloudWatch Monitoring interface endpoint"
+  type        = bool
 }
 
 variable "enable_sts_endpoint" {
-  description = "Enable STS VPC endpoint"
+  description = "Enable STS interface endpoint"
   type        = bool
-  default     = true
 }
 
 variable "enable_ec2_endpoint" {
-  description = "Enable EC2 VPC endpoint"
+  description = "Enable EC2 interface endpoint"
   type        = bool
-  default     = true
 }
 
 variable "enable_sqs_endpoint" {
-  description = "Enable SQS VPC endpoint"
+  description = "Enable SQS interface endpoint"
   type        = bool
-  default     = false
 }
 
 variable "enable_eks_endpoint" {
-  description = "Enable EKS VPC endpoint"
+  description = "Enable EKS interface endpoint"
   type        = bool
-  default     = true
 }
 
 variable "enable_s3_endpoint" {
   description = "Enable S3 Gateway endpoint"
   type        = bool
-  default     = true
 }
 
 variable "endpoints_allowed_cidrs" {
-  description = "List of CIDRs allowed to access VPC endpoints"
+  description = "List of CIDRs allowed to access interface endpoints (defaults to VPC CIDR if empty)"
   type        = list(string)
 }
 
 variable "s3_route_table_ids" {
-  description = "Route table IDs to associate with the S3 Gateway endpoint (usually private RTs)"
+  description = "Route table IDs to associate with the S3 Gateway endpoint (leave empty to use the PRIVATE RTs)"
   type        = list(string)
 }
 
-variable "enable_monitoring_endpoint" {
-  description = "Enable CloudWatch Monitoring VPC endpoint"
+variable "enable_vpc_flow_logs" {
+  description = "Enable VPC Flow Logs"
   type        = bool
-  default     = true
+}
+
+variable "vpc_flow_logs_retention_days" {
+  description = "CloudWatch Logs retention for VPC Flow Logs"
+  type        = number
+}
+
+variable "vpc_flow_logs_traffic_type" {
+  description = "Traffic to log: ACCEPT | REJECT | ALL"
+  type        = string
+}
+
+variable "karpenter_allow_public_subnets" {
+  type = bool
 }

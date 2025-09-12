@@ -1,14 +1,19 @@
-variable "project_name" {
-  description = "Project name used to build default resource names"
+variable "cluster_name" {
+  description = "EKS cluster name"
   type        = string
 }
 
-variable "queue_retention_seconds" {
-  description = "Message retention for the interruptions queue"
-  type        = number
+variable "region" {
+  description = "AWS region"
+  type        = string
 }
 
-variable "dlq_max_receive_count" {
-  description = "Max receives before messages go to DLQ"
-  type        = number
+variable "tags" {
+  description = "Tags to apply to Karpenter resources"
+  type        = map(string)
+}
+
+variable "ssm_prefix" {
+  description = "SSM Parameter Store prefix for writing Karpenter outputs"
+  type        = string
 }

@@ -1,4 +1,5 @@
 output "certificate_arn" {
-  value = aws_acm_certificate.this.arn
+  description = "ARN of the AWS ACM certificate created by this module."
+  value       = aws_acm_certificate.this.arn
 }
 

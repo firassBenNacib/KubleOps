@@ -1,19 +1,19 @@
-output "ec2_role_name" {
-  description = "Name of the EC2 IAM role"
-  value       = aws_iam_role.ec2_role.name
-}
-
-output "ec2_role_arn" {
-  description = "ARN of the EC2 IAM role"
-  value       = aws_iam_role.ec2_role.arn
-}
-
 output "eks_cluster_role_arn" {
-  description = "ARN of the EKS cluster IAM role"
-  value       = aws_iam_role.eks_cluster_role.arn
+  description = "EKS control plane IAM role ARN"
+  value       = data.aws_iam_role.eks_cluster.arn
 }
 
 output "node_group_role_arn" {
-  description = "ARN of the node group IAM role"
-  value       = aws_iam_role.node_group_role.arn
+  description = "Node group IAM role ARN"
+  value       = data.aws_iam_role.node_group.arn
+}
+
+output "admin_role_arn" {
+  description = "Admin EC2 IAM role ARN"
+  value       = data.aws_iam_role.admin.arn
+}
+
+output "admin_instance_profile_name" {
+  description = "Admin EC2 instance profile name"
+  value       = aws_iam_instance_profile.admin.name
 }

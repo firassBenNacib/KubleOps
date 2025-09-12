@@ -1,34 +1,44 @@
 variable "project_name" {
-  description = "Name of the project used to name the EKS cluster"
-  type        = string
-}
-
-variable "eks_cluster_role_arn" {
-  description = "ARN of the IAM role to be assumed by the EKS control plane"
-  type        = string
-}
-
-variable "pub_subnet_1a_id" {
-  description = "ID of public subnet 1a"
-  type        = string
-}
-
-variable "pub_subnet_2b_id" {
-  description = "ID of public subnet 2b"
-  type        = string
-}
-
-variable "pri_subnet_3a_id" {
-  description = "ID of private subnet 3a"
-  type        = string
-}
-
-variable "pri_subnet_4b_id" {
-  description = "ID of private subnet 4b"
+  description = "EKS cluster name base"
   type        = string
 }
 
 variable "k8s_version" {
-  description = "Kubernetes version to use for the EKS cluster"
+  description = "Kubernetes version for the EKS cluster"
   type        = string
+}
+
+variable "vpc_id" {
+  description = "VPC ID where the cluster will live"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "Subnets for data-plane/control-plane ENIs (private subnets)"
+  type        = list(string)
+}
+
+variable "eks_cluster_role_arn" {
+  description = "Existing IAM role ARN for the EKS control plane"
+  type        = string
+}
+
+variable "admin_role_arn" {
+  description = "Admin EC2 IAM role ARN to grant EKS access via access entries"
+  type        = string
+}
+
+variable "admin_ec2_sg_id" {
+  description = "Security Group ID of the admin EC2 instance allowed to reach the EKS API"
+  type        = string
+}
+
+variable "vpce_sg_id" {
+  description = "Security Group ID attached to VPC interface endpoints"
+  type        = string
+}
+
+variable "create_vpce_nodes_https_rule" {
+  description = "Whether to allow node SG to reach VPC endpoints on 443"
+  type        = bool
 }

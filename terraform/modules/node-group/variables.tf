@@ -3,6 +3,11 @@ variable "eks_cluster_name" {
   type        = string
 }
 
+variable "node_group_name" {
+  description = "Explicit name for the EKS managed node group"
+  type        = string
+}
+
 variable "node_group_role_arn" {
   description = "ARN of the IAM role to attach to the node group"
   type        = string
@@ -45,5 +50,10 @@ variable "node_group_instance_type" {
 
 variable "k8s_version" {
   description = "Kubernetes version for the node group"
+  type        = string
+}
+
+variable "cluster_service_cidr" {
+  description = "The CIDR block where Kubernetes service IPs are assigned from"
   type        = string
 }

@@ -1,7 +1,6 @@
-
 # KubleOps
 
-KubleOps provisions a secure, scalable, and highly available AWS infrastructure for running a multi-tier application on EKS. It uses Terraform modules to deploy a multi-AZ VPC with public and private subnets, dual NAT gateways, an EKS cluster (private API), a managed node group, optional bastion, IRSA roles, and Karpenter. An admin EC2 instance bootstraps tooling (Helm, ArgoCD, monitoring) and wires GitOps. CircleCI builds and pushes images to ECR and bumps tags in the app manifests repo. The AWS Load Balancer Controller handles ingress with ALB. ExternalDNS manages Route53 records.
+KubleOps provisions a secure, scalable, and highly available AWS infrastructure for running a multi-tier application on EKS. It uses **official terraform-aws-modules** to deploy a multi-AZ VPC with public and private subnets, configurable NAT (single or dual), an EKS cluster (private API), a managed node group, optional bastion, IRSA roles, and Karpenter. An admin EC2 instance bootstraps tooling (Helm, ArgoCD, monitoring) and wires GitOps. CircleCI builds and pushes images to ECR and bumps tags in the app manifests repo. The AWS Load Balancer Controller handles ingress with ALB. ExternalDNS manages Route53 records.
 
 Manifests: [KubleOps-manifest](https://github.com/firassBenNacib/KubleOps-manifest)
 
@@ -22,16 +21,16 @@ Manifests: [KubleOps-manifest](https://github.com/firassBenNacib/KubleOps-manife
 ## Features
 
 * Private EKS API endpoint with control plane logs enabled.
-* VPC with public/private subnets across two AZs; dual NAT gateways.
-* VPC endpoints are **toggleable**: S3 gateway and selected interface endpoints.
-* Managed node group plus Karpenter (node role, SQS interruption queue, EventBridge rules, access entry).
+* VPC with public/private subnets across two AZs; **single or dual NAT gateways (configurable)**.
+* VPC endpoints are **toggleable**: S3 gateway and selected interface endpoints (SSM, ECR, CloudWatch, etc.).
+* Managed node group plus Karpenter (node role/profile, discovery tags, access entry).
 * IRSA roles for controllers: ALB Controller, EBS CSI, ExternalDNS, Fluent Bit, CloudWatch Agent, Karpenter.
-* EKS add-ons: VPC CNI, CoreDNS, kube-proxy, EBS CSI.
+* **Managed EKS add-ons** as code: VPC CNI, CoreDNS, kube-proxy, **metrics-server**, **Fluent Bit**, (EBS CSI if desired).
 * ACM certificate validated by Route53.
 * Optional bastion host with strict SSH CIDR.
 * Admin EC2 instance installs cluster tooling and wires GitOps.
 * CircleCI builds, scans with Trivy, pushes to ECR, and updates Helm values.
-* Database runs as a Kubernetes **StatefulSet** in this project. For production, prefer **RDS** or **Aurora**.
+* Database runs as a Kubernetes **StatefulSet** in this project (by design). For production, prefer **RDS** or **Aurora**.
 
 ## Architecture
 
@@ -45,15 +44,14 @@ KubleOps/
 │   ├── main.tf
 │   ├── variables.tf
 │   ├── outputs.tf
-│   ├── providers.tf
-│   ├── resources.tf
-│   ├── backend.tf.exemple
-│   ├── terraform.tfvars.exemple
+│   ├── versions.tf
+│   ├── backend.tf           
+│   ├── terraform.tfvars     
 │   ├── ssh-bastion.sh
 │   ├── ssm-tunnel.sh
 │   └── modules/
-│       ├── acm  bastion  ec2  eks  eks_oidc  iam_core  iam_irsa
-│       ├── karpenter  nat-gw  node-group  route53-zone  vpc
+│       ├── acm  bastion  ec2  eks  eks-managed-addons  iam_core  iam_irsa
+│       ├── karpenter  node-group  route53-zone  vpc
 └── .circleci/
     └── config.yml
 ````
@@ -82,30 +80,41 @@ KubleOps/
 
    Edit `terraform.tfvars`:
 
+
    ```hcl
    project_name             = "KubleOps"
    region                   = "us-east-1"
+
    # VPC
    vpc_cidr                 = "10.0.0.0/16"
    pub_subnet_1a_cidr       = "10.0.1.0/24"
    pub_subnet_2b_cidr       = "10.0.2.0/24"
    pri_subnet_3a_cidr       = "10.0.3.0/24"
    pri_subnet_4b_cidr       = "10.0.4.0/24"
-   enable_s3_endpoint       = false
+
+   # NAT & endpoints
+   enable_nat_gateway       = true
+   single_nat_gateway       = true          # set false for one NAT per AZ
+   enable_ssm_endpoints     = true
+   enable_ecr_cw_endpoints  = true
+   enable_s3_gateway        = false
+
    # DNS/ACM
    zone_name                = "example.com"
    acm_domain_name          = "app.example.com"
+
    # SSH and keys
    allowed_ssh_cidr         = "YOUR.PUBLIC.IP.XXX/32"
    key_name                 = "KubleOps-project"
    enable_bastion           = true
    bastion_instance_type    = "t3.micro"
+
    # EKS/node group
-   k8s_version              = "1.29"
+   k8s_version              = "1.33"
    node_group_instance_type = "m5.xlarge"
    min_size                 = 2
-   max_size                 = 4
-   desired_size             = 2
+   max_size                 = 5
+   desired_size             = 3
    ```
 
 4. Deploy:
@@ -121,6 +130,7 @@ KubleOps/
 They also support `shell` for an interactive session.
 
 **Bastion path**
+
 ```bash
 # starts SSH tunnels: ArgoCD :8443, Grafana :3000, Prometheus :9090
 ./ssh-bastion.sh up
@@ -128,7 +138,7 @@ They also support `shell` for an interactive session.
 
 # open an interactive shell on the target via bastion
 ./ssh-bastion.sh shell
-````
+```
 
 **SSM path (no bastion/public IP)**
 
@@ -141,20 +151,18 @@ They also support `shell` for an interactive session.
 ./ssm-tunnel.sh shell
 ```
 
-
 ## Infrastructure Modules
 
-* **vpc**: VPC, IGW, public/private subnets, route tables, security groups, S3 gateway endpoint, optional interface endpoints (toggle via variables).
-* **nat-gw**: Two NAT gateways and private route tables.
+* **vpc**: Terraform AWS VPC module; VPC, subnets, routes, security groups, **gateway + interface endpoints** (toggle via variables).
 * **route53-zone**: Looks up an existing hosted zone by name; exports the zone ID.
 * **acm**: Public ACM certificate with DNS validation in Route53.
-* **iam\_core**: IAM roles: EKS control plane, managed node group, EC2 admin; ECR access for app repos.
-* **eks**: Private EKS cluster; control plane logging enabled.
-* **eks\_oidc**: IAM OIDC provider for IRSA.
+* **iam\_core**: IAM roles (EKS control plane, node groups, admin EC2), ECR access.
+* **eks**: Private EKS cluster; control plane logging enabled; **CMK created** (optionally used via `encryption_config`).
+* **eks-managed-addons**: VPC CNI, CoreDNS, kube-proxy, metrics-server, Fluent Bit.
 * **iam\_irsa**: IRSA roles for ALB Controller, EBS CSI, ExternalDNS, Fluent Bit, CloudWatch Agent, Karpenter.
 * **node-group**: Managed node group in private subnets.
-* **karpenter**: Node role and instance profile, SQS interruption queue, EventBridge rules, access entry, discovery tags.
-* **ec2**: Admin Ubuntu instance that installs kubectl, Helm, ArgoCD CLI, monitoring stack, ALB Controller, ExternalDNS, and creates the ArgoCD Application for the manifests repo.
+* **karpenter**: Node role and instance profile, interruption handling, discovery tags/access entry.
+* **ec2**: Admin instance via module; installs kubectl, Helm, ArgoCD CLI, monitoring stack, ALB Controller, ExternalDNS, and creates the ArgoCD Application for the manifests repo.
 * **bastion** (optional): Amazon Linux host in a public subnet for SSH entry.
 
 ## CI/CD Pipeline
@@ -170,6 +178,7 @@ They also support `shell` for an interactive session.
 * Private EKS API endpoint.
 * Control plane logs enabled: `api`, `audit`, `authenticator`, `controllerManager`, `scheduler`.
 * IRSA for add-ons and workloads; avoid node-wide credentials in pods.
+* KMS CMK is created; use `encryption_config` to encrypt Kubernetes Secrets with your CMK.
 * SSH access restricted by `allowed_ssh_cidr`.
 * Private subnets behind NAT; ALB terminates at the edge.
 
@@ -181,10 +190,10 @@ They also support `shell` for an interactive session.
 
 ## Next Steps and Improvements
 
-* Migrate the database to a managed service (RDS or Aurora).
-* Encrypt EKS secrets with KMS; encrypt volumes and snapshots.
-
-* database backups; EBS snapshots; Route53 health checks/failover.
+* Attach AWS WAFv2 to ALB and add HSTS headers.
+* Tighten the S3 Gateway Endpoint policy to project buckets/principals only.
+* Policy guardrails (Kyverno/Gatekeeper); image signing (cosign) + admission checks.
+* Integrate HashiCorp Vault provider for centralized secret management.
 
 ## License
 

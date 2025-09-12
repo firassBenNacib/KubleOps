@@ -1,6 +1,5 @@
 data "aws_availability_zones" "available" {}
 
-
 data "aws_iam_policy_document" "s3_gateway_allow_get_any" {
   statement {
     effect    = "Allow"
@@ -13,157 +12,9 @@ data "aws_iam_policy_document" "s3_gateway_allow_get_any" {
   }
 }
 
-
-resource "aws_vpc" "vpc" {
-  cidr_block                       = var.vpc_cidr
-  instance_tenancy                 = "default"
-  enable_dns_hostnames             = true
-  enable_dns_support               = true
-  assign_generated_ipv6_cidr_block = false
-
-  tags = {
-    Name = var.vpc_name
-  }
-}
-
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.vpc.id
-
-  tags = {
-    Name = var.igw_name
-  }
-}
-
-resource "aws_subnet" "pub_subnet_1a" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.pub_subnet_1a_cidr
-  availability_zone       = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name                                        = var.pub_subnet_1a_name
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
-    "kubernetes.io/role/elb"                    = 1
-  }
-}
-
-resource "aws_subnet" "pub_subnet_2b" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.pub_subnet_2b_cidr
-  availability_zone       = data.aws_availability_zones.available.names[1]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name                                        = var.pub_subnet_2b_name
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
-    "kubernetes.io/role/elb"                    = 1
-  }
-}
-
-resource "aws_subnet" "pri_subnet_3a" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.pri_subnet_3a_cidr
-  availability_zone       = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = false
-
-  tags = {
-    Name                                        = var.pri_subnet_3a_name
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
-    "kubernetes.io/role/internal-elb"           = 1
-    "karpenter.sh/discovery"                    = var.project_name
-  }
-}
-
-resource "aws_subnet" "pri_subnet_4b" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.pri_subnet_4b_cidr
-  availability_zone       = data.aws_availability_zones.available.names[1]
-  map_public_ip_on_launch = false
-
-  tags = {
-    Name                                        = var.pri_subnet_4b_name
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
-    "kubernetes.io/role/internal-elb"           = 1
-    "karpenter.sh/discovery"                    = var.project_name
-  }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = var.route_table_name
-  }
-}
-
-resource "aws_route_table_association" "pub_subnet_1a" {
-  subnet_id      = aws_subnet.pub_subnet_1a.id
-  route_table_id = aws_route_table.public.id
-}
-
-resource "aws_route_table_association" "pub_subnet_2b" {
-  subnet_id      = aws_subnet.pub_subnet_2b.id
-  route_table_id = aws_route_table.public.id
-}
-
-resource "aws_security_group" "bastion" {
-  count       = var.enable_bastion ? 1 : 0
-  name        = "${var.project_name}-bastion-sg"
-  description = "Allow SSH access to Bastion host"
-  vpc_id      = aws_vpc.vpc.id
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-bastion-sg"
-  }
-}
-
-resource "aws_security_group" "default" {
-  vpc_id      = aws_vpc.vpc.id
-  description = "Default SG for EC2 (SSH from bastion)"
-
-  dynamic "ingress" {
-    for_each = var.enable_bastion ? [1] : []
-    content {
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [aws_security_group.bastion[0].id]
-      description     = "Allow SSH from Bastion Host"
-    }
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = var.security_group_name
-  }
-}
-
 locals {
+  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+
   any_interface_endpoints = (
     var.enable_ssm_endpoints ||
     var.enable_ecr_cw_endpoints ||
@@ -173,195 +24,219 @@ locals {
     var.enable_sqs_endpoint ||
     var.enable_eks_endpoint
   )
-}
 
-resource "aws_security_group" "vpce" {
-  count       = local.any_interface_endpoints ? 1 : 0
-  name        = "${var.project_name}-vpce-sg"
-  description = "Interface endpoints SG"
-  vpc_id      = aws_vpc.vpc.id
+  vpce_ingress_cidrs = length(var.endpoints_allowed_cidrs) > 0 ? var.endpoints_allowed_cidrs : [var.vpc_cidr]
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = length(var.endpoints_allowed_cidrs) > 0 ? var.endpoints_allowed_cidrs : [var.vpc_cidr]
-  }
+  endpoints_map = merge(
+    var.enable_ssm_endpoints ? {
+      ssm = {
+        service             = "ssm"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ssm-endpoint" }
+      }
+      ssmmessages = {
+        service             = "ssmmessages"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ssmmessages-endpoint" }
+      }
+      ec2messages = {
+        service             = "ec2messages"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ec2messages-endpoint" }
+      }
+    } : {},
+    var.enable_ecr_cw_endpoints ? {
+      ecr_api = {
+        service             = "ecr.api"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ecr-api-endpoint" }
+      }
+      ecr_dkr = {
+        service             = "ecr.dkr"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ecr-dkr-endpoint" }
+      }
+      logs = {
+        service             = "logs"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-logs-endpoint" }
+      }
+    } : {},
+    var.enable_monitoring_endpoint ? {
+      monitoring = {
+        service             = "monitoring"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-monitoring-endpoint" }
+      }
+    } : {},
+    var.enable_sts_endpoint ? {
+      sts = {
+        service             = "sts"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-sts-endpoint" }
+      }
+    } : {},
+    var.enable_ec2_endpoint ? {
+      ec2 = {
+        service             = "ec2"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-ec2-endpoint" }
+      }
+    } : {},
+    var.enable_sqs_endpoint ? {
+      sqs = {
+        service             = "sqs"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-sqs-endpoint" }
+      }
+    } : {},
+    var.enable_eks_endpoint ? {
+      eks = {
+        service             = "eks"
+        private_dns_enabled = true
+        tags                = { Name = "${var.project_name}-eks-endpoint" }
+      }
+    } : {},
+    var.enable_s3_endpoint ? {
+      s3 = {
+        service         = "s3"
+        service_type    = "Gateway"
+        policy          = data.aws_iam_policy_document.s3_gateway_allow_get_any.json
+        route_table_ids = length(var.s3_route_table_ids) > 0 ? var.s3_route_table_ids : module.vpc_core.private_route_table_ids
+        tags            = { Name = "${var.project_name}-s3-endpoint" }
+      }
+    } : {}
+  )
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "${var.project_name}-vpce-sg" }
-}
-
-
-resource "aws_vpc_endpoint" "ssm" {
-  count               = var.enable_ssm_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ssm"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ssm-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ssmmessages" {
-  count               = var.enable_ssm_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ssmmessages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ssmmessages-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ec2messages" {
-  count               = var.enable_ssm_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ec2messages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ec2messages-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ecr_api" {
-  count               = var.enable_ecr_cw_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ecr.api"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ecr-api-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  count               = var.enable_ecr_cw_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ecr.dkr"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ecr-dkr-endpoint"
+  vpce_sg_rules = {
+    for cidr in local.vpce_ingress_cidrs :
+    "ingress_https_${replace(cidr, "/", "_")}" => {
+      description = "HTTPS from ${cidr}"
+      cidr_blocks = [cidr]
+    }
   }
 }
 
-resource "aws_vpc_endpoint" "logs" {
-  count               = var.enable_ecr_cw_endpoints ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.logs"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
+module "vpc_core" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
 
-  tags = {
-    Name = "${var.project_name}-logs-endpoint"
+  name = var.vpc_name
+  cidr = var.vpc_cidr
+
+  azs             = local.azs
+  public_subnets  = [var.pub_subnet_1a_cidr, var.pub_subnet_2b_cidr]
+  private_subnets = [var.pri_subnet_3a_cidr, var.pri_subnet_4b_cidr]
+
+  public_subnet_names  = [var.pub_subnet_1a_name, var.pub_subnet_2b_name]
+  private_subnet_names = [var.pri_subnet_3a_name, var.pri_subnet_4b_name]
+
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  enable_nat_gateway = var.enable_nat_gateway
+  single_nat_gateway = var.single_nat_gateway
+
+  enable_flow_log                                 = var.enable_vpc_flow_logs
+  flow_log_destination_type                       = "cloud-watch-logs"
+  create_flow_log_cloudwatch_log_group            = true
+  create_flow_log_cloudwatch_iam_role             = true
+  flow_log_cloudwatch_log_group_retention_in_days = var.vpc_flow_logs_retention_days
+  flow_log_traffic_type                           = var.vpc_flow_logs_traffic_type
+  flow_log_max_aggregation_interval               = 60
+
+  public_subnet_tags = merge(
+    {
+      "kubernetes.io/cluster/${var.project_name}" = "shared"
+      "kubernetes.io/role/elb"                    = 1
+    },
+    var.karpenter_allow_public_subnets ? { "karpenter.sh/discovery" = var.project_name } : {}
+  )
+
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${var.project_name}" = "shared"
+    "kubernetes.io/role/internal-elb"           = 1
+    "karpenter.sh/discovery"                    = var.project_name
   }
+
+  tags = { Project = var.project_name }
 }
 
-resource "aws_vpc_endpoint" "monitoring" {
-  count               = var.enable_monitoring_endpoint ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.monitoring"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
+module "vpc_endpoints" {
+  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
+  version = "~> 6.0"
 
-  tags = {
-    Name = "${var.project_name}-monitoring-endpoint"
-  }
+  create = length(local.endpoints_map) > 0
+
+  vpc_id    = module.vpc_core.vpc_id
+  endpoints = local.endpoints_map
+
+  create_security_group      = local.any_interface_endpoints
+  security_group_name_prefix = "${var.project_name}-vpce-"
+  security_group_description = "VPC endpoint security group"
+  security_group_rules       = local.vpce_sg_rules
+
+  subnet_ids = local.any_interface_endpoints ? module.vpc_core.private_subnets : null
+
+  tags = { Project = var.project_name }
 }
 
-resource "aws_vpc_endpoint" "sts" {
-  count               = var.enable_sts_endpoint ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.sts"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-sts-endpoint"
-  }
+resource "aws_security_group" "bastion" {
+  count       = var.enable_bastion ? 1 : 0
+  name        = "${var.project_name}-bastion-sg"
+  description = "Bastion host SG (rules managed separately)"
+  vpc_id      = module.vpc_core.vpc_id
+  tags        = { Name = "${var.project_name}-bastion-sg" }
 }
 
-resource "aws_vpc_endpoint" "ec2" {
-  count               = var.enable_ec2_endpoint ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.ec2"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-ec2-endpoint"
-  }
+resource "aws_vpc_security_group_egress_rule" "bastion_all_egress" {
+  count             = var.enable_bastion ? 1 : 0
+  security_group_id = aws_security_group.bastion[0].id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow all egress"
 }
 
-resource "aws_vpc_endpoint" "sqs" {
-  count               = var.enable_sqs_endpoint ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.sqs"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-sqs-endpoint"
-  }
+resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
+  count             = var.enable_bastion ? 1 : 0
+  security_group_id = aws_security_group.bastion[0].id
+  from_port         = 22
+  to_port           = 22
+  ip_protocol       = "tcp"
+  cidr_ipv4         = var.allowed_ssh_cidr
+  description       = "SSH from allowed CIDR"
 }
 
-resource "aws_vpc_endpoint" "eks" {
-  count               = var.enable_eks_endpoint ? 1 : 0
-  vpc_id              = aws_vpc.vpc.id
-  service_name        = "com.amazonaws.${var.region}.eks"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.pri_subnet_3a.id, aws_subnet.pri_subnet_4b.id]
-  security_group_ids  = [aws_security_group.vpce[0].id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${var.project_name}-eks-endpoint"
-  }
+resource "aws_security_group" "ec2_default" {
+  name        = var.security_group_name
+  description = "Default SG for admin EC2"
+  vpc_id      = module.vpc_core.vpc_id
+  tags        = { Name = var.security_group_name }
 }
 
-resource "aws_vpc_endpoint" "s3" {
-  count             = var.enable_s3_endpoint ? 1 : 0
-  vpc_id            = aws_vpc.vpc.id
-  service_name      = "com.amazonaws.${var.region}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids   = length(var.s3_route_table_ids) > 0 ? var.s3_route_table_ids : [aws_route_table.public.id]
-  policy            = data.aws_iam_policy_document.s3_gateway_allow_get_any.json
+resource "aws_vpc_security_group_egress_rule" "ec2_default_all_egress" {
+  security_group_id = aws_security_group.ec2_default.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow all egress"
+}
 
-  tags = {
-    Name = "${var.project_name}-s3-endpoint"
-  }
+resource "aws_vpc_security_group_ingress_rule" "ec2_default_ssh_from_bastion" {
+  count                        = var.enable_bastion ? 1 : 0
+  security_group_id            = aws_security_group.ec2_default.id
+  from_port                    = 22
+  to_port                      = 22
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.bastion[0].id
+  description                  = "SSH from Bastion host SG"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "vpce_allow_from_admin_ec2_https" {
+  count                        = local.any_interface_endpoints ? 1 : 0
+  security_group_id            = module.vpc_endpoints.security_group_id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.ec2_default.id
+  description                  = "HTTPS from admin EC2 SG"
 }

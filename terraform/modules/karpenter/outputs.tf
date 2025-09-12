@@ -1,24 +1,24 @@
+output "karpenter_controller_role_arn" {
+  description = "IAM role ARN for the Karpenter controller"
+  value       = module.eks_karpenter.iam_role_arn
+}
+
 output "karpenter_node_role_arn" {
   description = "ARN of the Karpenter node IAM role"
-  value       = aws_iam_role.karpenter_node_role.arn
+  value       = module.eks_karpenter.node_iam_role_arn
 }
 
 output "karpenter_instance_profile_name" {
   description = "Instance profile name for Karpenter nodes"
-  value       = aws_iam_instance_profile.karpenter_node.name
+  value       = module.eks_karpenter.instance_profile_name
 }
 
 output "karpenter_interruption_queue_name" {
   description = "Name of the Karpenter interruptions SQS queue"
-  value       = aws_sqs_queue.karpenter_interruptions.name
+  value       = module.eks_karpenter.queue_name
 }
 
 output "karpenter_interruption_queue_arn" {
   description = "ARN of the Karpenter interruptions SQS queue"
-  value       = aws_sqs_queue.karpenter_interruptions.arn
-}
-
-output "karpenter_interruption_dlq_arn" {
-  description = "ARN of the Karpenter interruptions DLQ"
-  value       = aws_sqs_queue.karpenter_interruptions_dlq.arn
+  value       = module.eks_karpenter.queue_arn
 }

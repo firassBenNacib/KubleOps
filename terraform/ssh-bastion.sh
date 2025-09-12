@@ -6,7 +6,7 @@ CMD="${1:-up}"
 KEY_PATH="${KEY_PATH:-$HOME/.ssh/kubleops.pem}"       
 BASTION_KEY_PATH="${BASTION_KEY_PATH:-$KEY_PATH}"      
 BASTION_USER="${BASTION_USER:-ec2-user}"                 
-TARGET_USER="${TARGET_USER:-ubuntu}"
+TARGET_USER="${TARGET_USER:-ubuntu}" # or ec2-user
 
 PORT_ARGOCD="${PORT_ARGOCD:-8443}"
 PORT_GRAFANA="${PORT_GRAFANA:-3000}"

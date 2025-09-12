@@ -7,5 +7,4 @@ variable "zone_name" {
 variable "private_zone" {
   description = "Set true if this is a private hosted zone"
   type        = bool
-  default     = false
 }
