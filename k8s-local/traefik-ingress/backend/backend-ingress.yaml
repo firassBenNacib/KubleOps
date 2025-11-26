@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  namespace: backend
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: backend-redirect-to-https@kubernetescrd # Enforce SSL redirection
+spec:
+  ingressClassName: traefik 
+  tls:
+    - hosts:
+        - api.devops-local.com
+      secretName: backend-tls # TLS secret for SSL termination
+  rules:
+    - host: api.devops-local.com
+      http:
+        paths:
+          - path: /springMVC
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 80

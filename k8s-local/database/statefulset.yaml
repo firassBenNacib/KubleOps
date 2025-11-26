@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: database
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      serviceAccountName: database-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: mysql
+        image: mysql:8.0 # Official MySQL 8.0 image
+        ports:
+        - containerPort: 3306
+          name: mysql
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true 
+          capabilities:
+            drop: ["ALL"]
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: root-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: mysql-config
+              key: MYSQL_DATABASE
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: username
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: user-password
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: run-volume
+          mountPath: /var/run/mysqld
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD"] # Check if MySQL is ready
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "mysql -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD -e 'SELECT 1;'"] # Check if MySQL is alive
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 6
+        startupProbe:
+          exec:
+            command: ["sh", "-c", "mysql -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD -e 'SELECT 1;'"] # Check if MySQL has started
+          failureThreshold: 30
+          periodSeconds: 10
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "mysqladmin shutdown -uroot -p$MYSQL_ROOT_PASSWORD"] # Graceful shutdown
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: run-volume
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-storage # Persistent Volume Claim for MySQL data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+#     storageClassName: "<your-storage-class>" # Omit this field to use the cluster's default StorageClass
+      resources:
+        requests:
+          storage: 10Gi

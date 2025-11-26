@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: backend
+data:
+  SPRING_DATASOURCE_URL: jdbc:mysql://mysql.database.svc.cluster.local:3306/DatabaseApp?useSSL=true&requireSSL=true&serverTimezone=UTC

@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ingress
+  namespace: frontend
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: frontend-redirect-to-https@kubernetescrd # Enforce SSL redirection
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - app.devops-local.com
+      secretName: frontend-tls # TLS secret for SSL termination
+  rules:
+    - host: app.devops-local.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

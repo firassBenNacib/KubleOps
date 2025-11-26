@@ -1,0 +1,25 @@
+# NGINX Controller for is being retired: Use Traefik Ingress Controller instead or Gateway API
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ingress
+  namespace: frontend
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true" # Enforce SSL redirection
+spec:
+  ingressClassName: nginx 
+  tls:
+    - hosts:
+        - app.devops-local.com
+      secretName: frontend-tls # TLS secret for SSL termination
+  rules:
+    - host: app.devops-local.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

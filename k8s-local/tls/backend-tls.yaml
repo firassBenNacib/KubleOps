@@ -1,0 +1,9 @@
+apiVersion: v1
+data:
+  tls.crt: <your-base64-encoded-certificate>
+  tls.key: <your-base64-encoded-key>
+kind: Secret
+metadata:
+  name: backend-tls
+  namespace: backend
+type: kubernetes.io/tls

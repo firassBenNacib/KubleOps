@@ -1,7 +1,7 @@
-k8s/secrets/
-k8s/backend/secret.yaml
-k8s/frontend/secret.yaml
-k8s/database/secret.yaml
+k8s-local/secrets/
+k8s-local/backend/secret.yaml
+k8s-local/frontend/secret.yaml
+k8s-local/database/secret.yaml
 *.log
 *.tmp
 *.bak
@@ -18,9 +18,11 @@ terraform/user-data-scripts/*.sh
 .DS_Store
 **/test-*.yaml
 **/dev-*.yaml
-k8s/backend/secret.yaml
-k8s/database/secret.yaml
-k8s/secrets/backend-docker-secret.yaml
+k8s-local/backend/secret.yaml
+k8s-local/database/secret.yaml
+k8s-local/secrets/backend-docker-secret.yaml
+k8s-local/*.crt
+k8s-local/*.key
 *.pem
 *.zip
 *.rar
